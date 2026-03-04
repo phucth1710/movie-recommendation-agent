@@ -30,15 +30,16 @@ for fname in [TITLE_BASICS, TITLE_RATINGS]:
 title_basics = pd.read_csv(TITLE_BASICS, sep='\t', dtype=str, compression='gzip')
 title_ratings = pd.read_csv(TITLE_RATINGS, sep='\t', dtype=str, compression='gzip')
 
-# Merge datasets on tconst
-df = pd.merge(title_basics, title_ratings, on='tconst')
-
 # Filter for movies/shows with >50,000 votes
-df = df[df['numVotes'].astype(int) > 50000]
+title_ratings_filtered = title_ratings[title_ratings['numVotes'].astype(int) > 50000]
 
-# Select relevant columns and rename
-df = df[['primaryTitle', 'titleType', 'genres', 'averageRating', 'numVotes', 'startYear', 'originalTitle']]
+# Merge datasets on tconst
+df = pd.merge(title_basics, title_ratings_filtered, on='tconst')
+
+# Select relevant columns and rename, including IMDb id
+df = df[['tconst', 'primaryTitle', 'titleType', 'genres', 'averageRating', 'numVotes', 'startYear', 'originalTitle']]
 df = df.rename(columns={
+    'tconst': 'imdb_id',
     'primaryTitle': 'Name',
     'averageRating': 'Rating',
     'numVotes': 'Popularity',
