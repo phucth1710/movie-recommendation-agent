@@ -45,23 +45,26 @@ ratings = ratings[ratings['numVotes'].astype(int) > 50000]
 
 df = pd.merge(basics, ratings, on='tconst')
 
-# Merge crew info
+
+# Group by 'tconst' before each left join to avoid duplication
 crew = crew.rename(columns={'directors': 'director_ids', 'writers': 'writer_ids'})
-df = pd.merge(df, crew, on='tconst', how='left')
+crew_grouped = crew.groupby('tconst', as_index=False).first()
+df = pd.merge(df, crew_grouped, on='tconst', how='left')
 
-# Merge principal cast/crew
-df = pd.merge(df, principals, on='tconst', how='left')
+principals_grouped = principals.groupby('tconst', as_index=False).first()
+df = pd.merge(df, principals_grouped, on='tconst', how='left')
 
-# Merge alternate titles
-df = pd.merge(df, akas[['titleId','title','region','language','types','attributes']], left_on='tconst', right_on='titleId', how='left')
+akas_grouped = akas[['titleId','title','region','language','types','attributes']].groupby('titleId', as_index=False).first()
+df = pd.merge(df, akas_grouped, left_on='tconst', right_on='titleId', how='left')
 
 # Merge name info for cast/crew
-# Merge principals and name_basics on 'nconst'
 principals_with_names = pd.merge(principals, name_basics, on='nconst', how='left')
-# Merge all cast/crew info to df on 'tconst'
-df = pd.merge(df, principals_with_names, on='tconst', how='left')
+principals_with_names_grouped = principals_with_names.groupby('tconst', as_index=False).first()
+df = pd.merge(df, principals_with_names_grouped, on='tconst', how='left')
 
+# Remove duplicates based on 'tconst' (IMDb ID)
+df = df.drop_duplicates(subset=['tconst'])
 # Save all columns to CSV
 out_cols = list(df.columns)
 df.to_csv('imdb_full_metadata.csv', index=False, columns=out_cols)
-print(f"Saved {len(df)} entries with full metadata to imdb_full_metadata.csv.")
+print(f"Saved {len(df)} unique entries with full metadata to imdb_full_metadata.csv.")
