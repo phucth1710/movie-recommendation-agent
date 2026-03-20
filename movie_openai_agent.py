@@ -1,6 +1,7 @@
 import asyncio
 import math
 import os
+import re
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
@@ -23,6 +24,10 @@ DEFAULT_WEIGHTS = {
     "rating": 0.3,
 }
 
+ALLOWED_SHOW_TYPES = {"tvseries", "tvminiseries"}
+ALLOWED_MOVIE_TYPES = {"movie", "tvmovie"}
+ALLOWED_OUTPUT_TYPES = ALLOWED_SHOW_TYPES | ALLOWED_MOVIE_TYPES
+
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -36,6 +41,22 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _normalized_type(movie: Any) -> str:
+    return str(getattr(movie, "Type", "") or "").strip().lower()
+
+
+def _is_show_type(movie: Any) -> bool:
+    return _normalized_type(movie) in ALLOWED_SHOW_TYPES
+
+
+def _is_movie_type(movie: Any) -> bool:
+    return _normalized_type(movie) in ALLOWED_MOVIE_TYPES
+
+
+def _is_allowed_output_type(movie: Any) -> bool:
+    return _normalized_type(movie) in ALLOWED_OUTPUT_TYPES
 
 
 def _movie_to_dict(movie: Any) -> Dict[str, Any]:
@@ -61,6 +82,10 @@ def resolve_reference_movie(reference: str, movies: List[Any]) -> Optional[Any]:
     if not normalized:
         return None
 
+    # If user entered an IMDb-style id, require exact id match.
+    if re.fullmatch(r"tt\d+", normalized, flags=re.IGNORECASE):
+        return find_movie_by_id(normalized, movies=movies)
+
     movie = find_movie_by_id(normalized, movies=movies)
     if movie is not None:
         return movie
@@ -69,25 +94,36 @@ def resolve_reference_movie(reference: str, movies: List[Any]) -> Optional[Any]:
     if movie is not None:
         return movie
 
+    # Prevent accidental broad matches like "t" or "a".
+    if len(normalized) < 3:
+        return None
+
     needle = normalized.lower()
+    partial_matches: List[Any] = []
     for candidate in movies:
-        name = str(getattr(candidate, "Name", "")).lower()
+        name = str(getattr(candidate, "Name", "")).lower().strip()
         if needle in name:
-            return candidate
+            partial_matches.append(candidate)
+
+    # Accept partial matching only when unambiguous.
+    if len(partial_matches) == 1:
+        return partial_matches[0]
+
     return None
 
 
 def scope_candidates(reference_movie: Any, movies: List[Any], scope_size: int = DEFAULT_SCOPE_SIZE) -> List[Dict[str, Any]]:
     target_scope = max(1, min(scope_size, max(1, len(movies) - 1)))
+    allowed_movies = [m for m in movies if _is_allowed_output_type(m)]
     return recommend_similar_movies(
         reference_movie,
-        candidates=movies,
+        candidates=allowed_movies,
         top_k=target_scope,
         weights=DEFAULT_WEIGHTS,
     )
 
 
-def rank_top_from_scoped_pool(scoped_rows: List[Dict[str, Any]], top_k: int = DEFAULT_TOP_K) -> List[Dict[str, Any]]:
+def rank_top_from_scoped_pool(scoped_rows: List[Dict[str, Any]], source_movie: Any, top_k: int = DEFAULT_TOP_K) -> List[Dict[str, Any]]:
     if not scoped_rows:
         return []
 
@@ -112,7 +148,16 @@ def rank_top_from_scoped_pool(scoped_rows: List[Dict[str, Any]], top_k: int = DE
         )
 
     ranked_rows = sorted(ranked_rows, key=lambda x: x["composite_score"], reverse=True)
-    return ranked_rows[: max(1, top_k)]
+
+    if _is_show_type(source_movie):
+        primary = [r for r in ranked_rows if _is_show_type(r["movie"])]
+        secondary = [r for r in ranked_rows if _is_movie_type(r["movie"])]
+    else:
+        primary = [r for r in ranked_rows if _is_movie_type(r["movie"])]
+        secondary = [r for r in ranked_rows if _is_show_type(r["movie"])]
+
+    merged = primary + secondary
+    return merged[: max(1, top_k)]
 
 
 @function_tool
@@ -143,7 +188,7 @@ def recommend_movies_from_reference(
         }
 
     scoped_rows = scope_candidates(source_movie, movies, scope_size=scope_size)
-    top_rows = rank_top_from_scoped_pool(scoped_rows, top_k=top_k)
+    top_rows = rank_top_from_scoped_pool(scoped_rows, source_movie=source_movie, top_k=top_k)
 
     output_rows: List[Dict[str, Any]] = []
     for row in top_rows:
@@ -234,7 +279,9 @@ Ranking workflow requirements:
 - The full local universe has around 5,448 movies/shows.
 - First scope to {DEFAULT_SCOPE_SIZE} candidates using the structured recommend_similar_movies logic already embedded in the tool.
 - Then return the best {DEFAULT_TOP_K} movies/shows from the scoped set.
-- Avoid duplicate companies equivalent issue does not apply here; still avoid duplicate titles where possible.
+- Only output movies or shows (tvSeries/tvMiniSeries/movie/tvMovie). Never output episodes, games, shorts, or other content types.
+- Prioritize same type as the source (show->show first, movie->movie first), then backfill with the other allowed type if fewer than {DEFAULT_TOP_K}.
+- Avoid duplicate titles where possible.
 
 Output requirements:
 1) source_movie
@@ -265,6 +312,7 @@ Style requirements:
 
 
 async def main() -> None:
+    movies = load_movie_universe()
     default_reference = DEFAULT_SOURCE_IMDB_ID if DEFAULT_SOURCE_IMDB_ID else DEFAULT_SOURCE_TITLE
     print("Enter a reference movie title or IMDb ID.")
     print(f"Press Enter to use default: {default_reference}")
@@ -275,6 +323,11 @@ async def main() -> None:
 
     reference_movie = user_input if user_input else default_reference
     print(f"Using reference: {reference_movie}")
+
+    if resolve_reference_movie(reference_movie, movies) is None:
+        print(f"Movie does not exist in the local dataset: {reference_movie}")
+        print("Please enter a valid IMDb ID (for example: tt0133093) or an exact movie/show title.")
+        return
 
     user_prompt = (
         f"Recommend 10 movies and shows similar to {reference_movie}. "
