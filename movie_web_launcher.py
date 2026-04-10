@@ -224,6 +224,15 @@ HTML_PAGE = """
       z-index: 1;
     }
 
+    th.sortable {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    th.sortable:hover {
+      background: #dbeafe;
+    }
+
     tbody tr:nth-child(even) { background: var(--row-alt); }
   </style>
 </head>
@@ -255,12 +264,12 @@ HTML_PAGE = """
           <thead>
             <tr>
               <th>Rank</th>
-              <th>Title</th>
+              <th id="thTitle" class="sortable" data-sort-key="title" data-label="Title">Title</th>
               <th>IMDb ID</th>
               <th>Type</th>
               <th>Year</th>
-              <th>Rating</th>
-              <th>Popularity</th>
+              <th id="thRating" class="sortable" data-sort-key="rating" data-label="Rating">Rating</th>
+              <th id="thPopularity" class="sortable" data-sort-key="popularity" data-label="Popularity">Popularity</th>
               <th>Genre</th>
               <th>Similarity</th>
               <th>Composite</th>
@@ -281,6 +290,16 @@ HTML_PAGE = """
     const resultCard = document.getElementById('resultCard');
     const errorBox = document.getElementById('error');
     const loading = document.getElementById('loading');
+    const sortableHeaders = Array.from(document.querySelectorAll('th.sortable'));
+
+    const SORT_CYCLES = {
+      title: ['asc', 'default'],
+      rating: ['desc', 'asc', 'default'],
+      popularity: ['desc', 'asc', 'default'],
+    };
+
+    let defaultRowsData = [];
+    let activeSort = { key: null, stateIndex: 0 };
 
     function showError(msg) {
       if (!msg) {
@@ -302,6 +321,101 @@ HTML_PAGE = """
       searchBtn.disabled = isLoading;
       searchBtn.textContent = isLoading ? 'Searching...' : 'Search';
     }
+
+    function resetSortableHeaders() {
+      sortableHeaders.forEach((th) => {
+        th.textContent = th.dataset.label;
+      });
+    }
+
+    function updateSortHeaderLabel(key, state) {
+      resetSortableHeaders();
+      if (!key || state === 'default') return;
+
+      const th = document.querySelector(`th.sortable[data-sort-key="${key}"]`);
+      if (!th) return;
+
+      if (key === 'title') {
+        th.textContent = `${th.dataset.label} (A-Z)`;
+        return;
+      }
+
+      if (state === 'desc') {
+        th.textContent = `${th.dataset.label} ↓`;
+      } else if (state === 'asc') {
+        th.textContent = `${th.dataset.label} ↑`;
+      }
+    }
+
+    function renderRows(rowData) {
+      rows.innerHTML = '';
+      rowData.forEach((row, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${index + 1}</td>
+          <td>${row.title || ''}</td>
+          <td>${row.imdb_id || ''}</td>
+          <td>${row.content_type || ''}</td>
+          <td>${row.year ?? ''}</td>
+          <td>${Number(row.rating || 0).toFixed(1)}</td>
+          <td>${row.popularity ?? ''}</td>
+          <td>${row.genre || ''}</td>
+          <td>${Number(row.similarity_score || 0).toFixed(3)}</td>
+          <td>${Number(row.composite_score || 0).toFixed(3)}</td>
+        `;
+        rows.appendChild(tr);
+      });
+    }
+
+    function getNextSortState(sortKey) {
+      const cycle = SORT_CYCLES[sortKey];
+      if (!cycle) return 'default';
+
+      if (activeSort.key !== sortKey) {
+        activeSort = { key: sortKey, stateIndex: 0 };
+        return cycle[0];
+      }
+
+      const nextIndex = (activeSort.stateIndex + 1) % cycle.length;
+      activeSort = { key: sortKey, stateIndex: nextIndex };
+      return cycle[nextIndex];
+    }
+
+    function applySort(sortKey) {
+      if (!defaultRowsData.length) return;
+
+      const state = getNextSortState(sortKey);
+      let sorted = [...defaultRowsData];
+
+      if (state === 'default') {
+        activeSort = { key: null, stateIndex: 0 };
+        updateSortHeaderLabel(null, 'default');
+        renderRows(sorted);
+        return;
+      }
+
+      if (sortKey === 'title') {
+        sorted.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' }));
+      } else if (sortKey === 'rating') {
+        sorted.sort((a, b) => Number(a.rating || 0) - Number(b.rating || 0));
+      } else if (sortKey === 'popularity') {
+        sorted.sort((a, b) => Number(a.popularity || 0) - Number(b.popularity || 0));
+      }
+
+      if (state === 'desc') {
+        sorted.reverse();
+      }
+
+      updateSortHeaderLabel(sortKey, state);
+      renderRows(sorted);
+    }
+
+    sortableHeaders.forEach((th) => {
+      th.addEventListener('click', () => {
+        const sortKey = th.dataset.sortKey;
+        applySort(sortKey);
+      });
+    });
 
     async function fetchSuggestions() {
       const q = queryInput.value.trim();
@@ -361,23 +475,10 @@ HTML_PAGE = """
         const source = data.source_movie || {};
         meta.textContent = `Source: ${source.title || 'N/A'} [${source.imdb_id || 'N/A'}] | Scope: ${data.scope_size} | Top: ${data.top_k}`;
 
-        rows.innerHTML = '';
-        (data.results || []).forEach((row, index) => {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${index + 1}</td>
-            <td>${row.title || ''}</td>
-            <td>${row.imdb_id || ''}</td>
-            <td>${row.content_type || ''}</td>
-            <td>${row.year ?? ''}</td>
-            <td>${Number(row.rating || 0).toFixed(1)}</td>
-            <td>${row.popularity ?? ''}</td>
-            <td>${row.genre || ''}</td>
-            <td>${Number(row.similarity_score || 0).toFixed(3)}</td>
-            <td>${Number(row.composite_score || 0).toFixed(3)}</td>
-          `;
-          rows.appendChild(tr);
-        });
+        defaultRowsData = [...(data.results || [])];
+        activeSort = { key: null, stateIndex: 0 };
+        updateSortHeaderLabel(null, 'default');
+        renderRows(defaultRowsData);
 
         resultCard.style.display = 'block';
       } catch (err) {
