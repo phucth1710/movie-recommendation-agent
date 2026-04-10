@@ -43,6 +43,14 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _safe_runtime_length(movie: Any) -> int:
+    """Get runtime/length in minutes when available; fallback to 0."""
+    runtime = getattr(movie, "Runtime", None)
+    if runtime in (None, ""):
+        runtime = getattr(movie, "runtimeMinutes", None)
+    return _safe_int(runtime, 0)
+
+
 def _normalized_type(movie: Any) -> str:
     return str(getattr(movie, "Type", "") or "").strip().lower()
 
@@ -70,6 +78,354 @@ def _movie_to_dict(movie: Any) -> Dict[str, Any]:
         "Year": getattr(movie, "Year", None),
         "Description": getattr(movie, "Description", None),
     }
+
+
+def _parse_genre_tokens(raw_genre: Any) -> List[str]:
+    if raw_genre is None:
+        return []
+    return [g.strip() for g in str(raw_genre).split(",") if g.strip()]
+
+
+def _truncate_text(value: Any, max_len: int = 120) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_len:
+        return text
+    return text[: max(0, max_len - 3)] + "..."
+
+
+def _build_movie_short_summary(movie: Dict[str, Any]) -> str:
+    """Create a compact, human-readable summary from available local metadata."""
+    title = str(movie.get("Name") or "This title")
+    content_type = str(movie.get("Type") or "title")
+    year = _safe_int(movie.get("Year"), 0)
+    rating = _safe_float(movie.get("Rating"), 0.0)
+    popularity = _safe_int(movie.get("Popularity"), 0)
+    genres = _parse_genre_tokens(movie.get("Genre"))
+
+    genre_phrase = " and ".join(genres[:2]) if genres else "mixed genres"
+    year_phrase = str(year) if year > 0 else "an unknown year"
+    popularity_phrase = f"{popularity:,} votes" if popularity > 0 else "limited vote data"
+
+    return (
+        f"{title} is a {content_type} from {year_phrase} centered on {genre_phrase} themes, "
+        f"with an IMDb rating of {rating:.1f} and {popularity_phrase}."
+    )
+
+
+def compare_two_movies(first_reference: str, second_reference: str, movies: List[Any]) -> Dict[str, Any]:
+    """Compare two movies/shows across core metadata fields."""
+    first_movie = resolve_reference_movie(first_reference, movies)
+    second_movie = resolve_reference_movie(second_reference, movies)
+
+    if first_movie is None or second_movie is None:
+        return {
+            "error": "One or both references could not be resolved.",
+            "first_found": first_movie is not None,
+            "second_found": second_movie is not None,
+        }
+
+    first = _movie_to_dict(first_movie)
+    second = _movie_to_dict(second_movie)
+
+    first_genres = set(_parse_genre_tokens(first.get("Genre")))
+    second_genres = set(_parse_genre_tokens(second.get("Genre")))
+    shared_genres = sorted(first_genres & second_genres)
+
+    first_rating = _safe_float(first.get("Rating"), 0.0)
+    second_rating = _safe_float(second.get("Rating"), 0.0)
+    first_popularity = _safe_int(first.get("Popularity"), 0)
+    second_popularity = _safe_int(second.get("Popularity"), 0)
+    first_year = _safe_int(first.get("Year"), 0)
+    second_year = _safe_int(second.get("Year"), 0)
+
+    return {
+        "first_movie": {
+            "imdb_id": first.get("imdb_id"),
+            "title": first.get("Name"),
+            "content_type": first.get("Type"),
+            "genre": first.get("Genre"),
+            "rating": first_rating,
+            "popularity": first_popularity,
+            "year": first_year,
+            "description": _build_movie_short_summary(first),
+        },
+        "second_movie": {
+            "imdb_id": second.get("imdb_id"),
+            "title": second.get("Name"),
+            "content_type": second.get("Type"),
+            "genre": second.get("Genre"),
+            "rating": second_rating,
+            "popularity": second_popularity,
+            "year": second_year,
+            "description": _build_movie_short_summary(second),
+        },
+        "comparison": {
+            "shared_genres": shared_genres,
+            "rating_diff": round(first_rating - second_rating, 3),
+            "popularity_diff": first_popularity - second_popularity,
+            "year_diff": first_year - second_year,
+            "higher_rated": "first" if first_rating > second_rating else ("second" if second_rating > first_rating else "tie"),
+            "more_popular": "first" if first_popularity > second_popularity else ("second" if second_popularity > first_popularity else "tie"),
+            "newer": "first" if first_year > second_year else ("second" if second_year > first_year else "tie"),
+        },
+    }
+
+
+def pretty_comparison_report(report: Dict[str, Any]) -> None:
+    if report.get("error"):
+        print(report["error"])
+        return
+
+    first = report["first_movie"]
+    second = report["second_movie"]
+    comp = report["comparison"]
+
+    left_name = str(first.get("title") or "First")
+    right_name = str(second.get("title") or "Second")
+    label_width = 14
+    left_width = 46
+    right_width = 46
+
+    def _row(label: str, left: Any, right: Any) -> str:
+        left_txt = str(left or "")
+        right_txt = str(right or "")
+        return f"{label:<{label_width}} | {left_txt:<{left_width}} | {right_txt:<{right_width}}"
+
+    def _winner_name(winner_key: str) -> str:
+        if winner_key == "first":
+            return left_name
+        if winner_key == "second":
+            return right_name
+        return "Tie"
+
+    def _signed(value: float, precision: int = 1) -> str:
+        return f"{value:+.{precision}f}"
+
+    print("Movie Comparison")
+    print(_row("Field", left_name, right_name))
+    print("-" * (label_width + left_width + right_width + 6))
+    print(_row("IMDb ID", first.get("imdb_id"), second.get("imdb_id")))
+    print(_row("Type", first.get("content_type"), second.get("content_type")))
+    print(_row("Genre", first.get("genre"), second.get("genre")))
+    print(_row("Rating", f"{_safe_float(first.get('rating')):.1f}", f"{_safe_float(second.get('rating')):.1f}"))
+    print(_row("Popularity", first.get("popularity"), second.get("popularity")))
+    print(_row("Year", first.get("year"), second.get("year")))
+    print(_row("Description", _truncate_text(first.get("description")), _truncate_text(second.get("description"))))
+    print()
+    shared = ", ".join(comp.get("shared_genres", [])) if comp.get("shared_genres") else "None"
+    print(f"Shared genres: {shared}")
+
+    rating_diff = _safe_float(comp.get("rating_diff"), 0.0)
+    popularity_diff = _safe_int(comp.get("popularity_diff"), 0)
+    year_diff = _safe_int(comp.get("year_diff"), 0)
+
+    print("Comparison summary:")
+    print(
+        f"- Rating: {_winner_name(comp.get('higher_rated', 'tie'))} "
+        f"({_signed(abs(rating_diff), 1)} points difference, first-minus-second={_signed(rating_diff, 1)})."
+    )
+    print(
+        f"- Popularity: {_winner_name(comp.get('more_popular', 'tie'))} "
+        f"({popularity_diff:+d} votes first-minus-second)."
+    )
+    print(
+        f"- Release year: {_winner_name(comp.get('newer', 'tie'))} "
+        f"({year_diff:+d} years first-minus-second)."
+    )
+
+    print("Interpretation:")
+    if comp.get("higher_rated") == "tie" and comp.get("more_popular") == "tie" and comp.get("newer") == "tie":
+        print("- Both titles are effectively matched on rating, popularity, and release timing.")
+    else:
+        if comp.get("higher_rated") != "tie":
+            print(f"- Critical reception edge goes to {_winner_name(comp.get('higher_rated', 'tie'))}.")
+        if comp.get("more_popular") != "tie":
+            print(f"- Audience scale edge goes to {_winner_name(comp.get('more_popular', 'tie'))}.")
+        if comp.get("newer") != "tie":
+            print(f"- Recency edge goes to {_winner_name(comp.get('newer', 'tie'))}.")
+
+
+def rank_top_movies_shows_by_genre_or_year(
+    movies: List[Any],
+    genre: Optional[str] = None,
+    year: Optional[int] = None,
+    content_mode: str = "both",
+    top_k: int = 10,
+) -> Dict[str, Any]:
+    """Rank top movies/shows within a genre or year using Rating > Popularity."""
+    mode = str(content_mode or "both").strip().lower()
+    if mode == "movie":
+        scoped = [m for m in movies if _is_movie_type(m)]
+    elif mode == "show":
+        scoped = [m for m in movies if _is_show_type(m)]
+    else:
+        mode = "both"
+        scoped = [m for m in movies if _is_allowed_output_type(m)]
+
+    normalized_genre = str(genre or "").strip().lower()
+    if normalized_genre:
+        scoped = [
+            m for m in scoped
+            if normalized_genre in {g.lower() for g in _parse_genre_tokens(getattr(m, "Genre", ""))}
+        ]
+
+    if year is not None:
+        scoped = [m for m in scoped if _safe_int(getattr(m, "Year", 0), 0) == year]
+
+    ranked = sorted(
+        scoped,
+        key=lambda m: (
+            _safe_float(getattr(m, "Rating", 0.0), 0.0),
+            _safe_int(getattr(m, "Popularity", 0), 0),
+        ),
+        reverse=True,
+    )
+
+    rows: List[Dict[str, Any]] = []
+    for movie in ranked[: max(1, top_k)]:
+        rows.append(
+            {
+                "imdb_id": getattr(movie, "imdb_id", None),
+                "title": getattr(movie, "Name", None),
+                "content_type": getattr(movie, "Type", None),
+                "genre": getattr(movie, "Genre", None),
+                "rating": _safe_float(getattr(movie, "Rating", 0.0), 0.0),
+                "popularity": _safe_int(getattr(movie, "Popularity", 0), 0),
+                "year": _safe_int(getattr(movie, "Year", 0), 0),
+            }
+        )
+
+    return {
+        "criteria": {
+            "genre": normalized_genre or None,
+            "year": year,
+            "content_mode": mode,
+            "ranking_priority": "rating_then_popularity",
+        },
+        "candidate_count": len(scoped),
+        "top_k": len(rows),
+        "results": rows,
+    }
+
+
+def pretty_top_rankings_report(report: Dict[str, Any]) -> None:
+    criteria = report.get("criteria", {})
+    print("Top Movies/Shows Ranking")
+    print(
+        "Filter: "
+        f"genre={criteria.get('genre') or 'any'}, "
+        f"year={criteria.get('year') if criteria.get('year') is not None else 'any'}, "
+        f"content={criteria.get('content_mode') or 'both'}"
+    )
+    print(f"Ranking priority: {criteria.get('ranking_priority', 'rating_then_popularity')}")
+    print(f"Candidates found: {report.get('candidate_count', 0)}")
+
+    rows = report.get("results", [])
+    if not rows:
+        print("No matching movies/shows found for the selected filter.")
+        return
+
+    print("Rank | Title | IMDb ID | Type | Year | Rating | Popularity | Genre")
+    print("-" * 110)
+    for idx, row in enumerate(rows, 1):
+        print(
+            f"{idx:<4} | "
+            f"{str(row.get('title') or ''):<30} | "
+            f"{str(row.get('imdb_id') or ''):<10} | "
+            f"{str(row.get('content_type') or ''):<10} | "
+            f"{_safe_int(row.get('year'), 0):<4} | "
+            f"{_safe_float(row.get('rating'), 0.0):<6.1f} | "
+            f"{_safe_int(row.get('popularity'), 0):<10} | "
+            f"{str(row.get('genre') or '')}"
+        )
+
+
+def rank_user_selected_set(
+    movies: List[Any],
+    references: List[str],
+) -> Dict[str, Any]:
+    """Resolve and rank a user-provided set by Rating > Popularity > Length."""
+    resolved: List[Any] = []
+    unresolved: List[str] = []
+    seen_ids = set()
+
+    for raw_ref in references:
+        ref = str(raw_ref or "").strip()
+        if not ref:
+            continue
+        movie = resolve_reference_movie(ref, movies)
+        if movie is None:
+            unresolved.append(ref)
+            continue
+        imdb_id = str(getattr(movie, "imdb_id", "") or "")
+        if imdb_id and imdb_id in seen_ids:
+            continue
+        if imdb_id:
+            seen_ids.add(imdb_id)
+        resolved.append(movie)
+
+    ranked = sorted(
+        resolved,
+        key=lambda m: (
+            _safe_float(getattr(m, "Rating", 0.0), 0.0),
+            _safe_int(getattr(m, "Popularity", 0), 0),
+            _safe_runtime_length(m),
+        ),
+        reverse=True,
+    )
+
+    rows: List[Dict[str, Any]] = []
+    for movie in ranked:
+        rows.append(
+            {
+                "imdb_id": getattr(movie, "imdb_id", None),
+                "title": getattr(movie, "Name", None),
+                "content_type": getattr(movie, "Type", None),
+                "year": _safe_int(getattr(movie, "Year", 0), 0),
+                "genre": getattr(movie, "Genre", None),
+                "rating": _safe_float(getattr(movie, "Rating", 0.0), 0.0),
+                "popularity": _safe_int(getattr(movie, "Popularity", 0), 0),
+                "length": _safe_runtime_length(movie),
+            }
+        )
+
+    return {
+        "input_size": len([r for r in references if str(r).strip()]),
+        "resolved_count": len(rows),
+        "unresolved": unresolved,
+        "ranking_priority": "rating_then_popularity_then_length",
+        "results": rows,
+    }
+
+
+def pretty_user_set_ranking_report(report: Dict[str, Any]) -> None:
+    print("User Set Ranking")
+    print(f"Ranking priority: {report.get('ranking_priority', 'rating_then_popularity_then_length')}")
+    print(f"Input items: {report.get('input_size', 0)} | Resolved: {report.get('resolved_count', 0)}")
+
+    unresolved = report.get("unresolved", [])
+    if unresolved:
+        print("Unresolved inputs: " + ", ".join(unresolved))
+
+    rows = report.get("results", [])
+    if not rows:
+        print("No valid movies/shows were resolved from the provided set.")
+        return
+
+    print("Rank | Title | IMDb ID | Type | Year | Rating | Popularity | Length(min) | Genre")
+    print("-" * 125)
+    for idx, row in enumerate(rows, 1):
+        print(
+            f"{idx:<4} | "
+            f"{str(row.get('title') or ''):<30} | "
+            f"{str(row.get('imdb_id') or ''):<10} | "
+            f"{str(row.get('content_type') or ''):<10} | "
+            f"{_safe_int(row.get('year'), 0):<4} | "
+            f"{_safe_float(row.get('rating'), 0.0):<6.1f} | "
+            f"{_safe_int(row.get('popularity'), 0):<10} | "
+            f"{_safe_int(row.get('length'), 0):<11} | "
+            f"{str(row.get('genre') or '')}"
+        )
 
 
 @lru_cache(maxsize=1)
@@ -313,6 +669,115 @@ Style requirements:
 
 async def main() -> None:
     movies = load_movie_universe()
+    print("Choose an action:")
+    print("1) Find 10 similar movies/shows")
+    print("2) Compare with another movie/show")
+    print("3) Rank top movies/shows by genre or year (Rating > Popularity)")
+    print("4) Rank a user-provided set (Rating > Popularity > Length)")
+    try:
+        action = input("> ").strip().lower()
+    except EOFError:
+        action = ""
+
+    if action in {"4", "set", "list", "custom"}:
+        print("What set of moive/show would you like to rank?")
+        print("Enter movie titles or IMDb IDs separated by commas.")
+        try:
+            set_input = input("> ").strip()
+        except EOFError:
+            set_input = ""
+
+        # Internal working array to store the provided set.
+        reference_array = [part.strip() for part in set_input.split(",") if part.strip()]
+        if not reference_array:
+            print("You must provide at least one movie/show title or IMDb ID.")
+            return
+
+        report = rank_user_selected_set(movies=movies, references=reference_array)
+        pretty_user_set_ranking_report(report)
+        return
+
+    if action in {"3", "top", "rank", "genre", "year"}:
+        print("Choose content type:")
+        print("1) Movie only")
+        print("2) Show only")
+        print("3) Both movies and shows")
+        try:
+            content_choice = input("> ").strip().lower()
+        except EOFError:
+            content_choice = ""
+
+        if content_choice in {"1", "movie", "m"}:
+            content_mode = "movie"
+        elif content_choice in {"2", "show", "s", "tv"}:
+            content_mode = "show"
+        else:
+            content_mode = "both"
+
+        print("Choose ranking filter:")
+        print("1) Genre")
+        print("2) Year")
+        try:
+            filter_choice = input("> ").strip().lower()
+        except EOFError:
+            filter_choice = ""
+
+        top_k = DEFAULT_TOP_K
+        print(f"How many results? Press Enter to use default: {DEFAULT_TOP_K}")
+        try:
+            top_k_input = input("> ").strip()
+        except EOFError:
+            top_k_input = ""
+        if top_k_input:
+            parsed_top_k = _safe_int(top_k_input, DEFAULT_TOP_K)
+            top_k = parsed_top_k if parsed_top_k > 0 else DEFAULT_TOP_K
+
+        if filter_choice in {"1", "genre", "g"}:
+            print("Enter a genre (example: Drama, Action, Sci-Fi):")
+            try:
+                genre_input = input("> ").strip()
+            except EOFError:
+                genre_input = ""
+
+            if not genre_input:
+                print("Genre is required for genre ranking.")
+                return
+
+            report = rank_top_movies_shows_by_genre_or_year(
+                movies=movies,
+                genre=genre_input,
+                year=None,
+                content_mode=content_mode,
+                top_k=top_k,
+            )
+            pretty_top_rankings_report(report)
+            return
+
+        print("Enter a year (example: 2014):")
+        try:
+            year_input = input("> ").strip()
+        except EOFError:
+            year_input = ""
+
+        if not year_input:
+            print("Year is required for year ranking.")
+            return
+
+        year_value = _safe_int(year_input, 0)
+        if year_value <= 0:
+            print("Invalid year. Please enter a valid numeric year.")
+            return
+
+        report = rank_top_movies_shows_by_genre_or_year(
+            movies=movies,
+            genre=None,
+            year=year_value,
+            content_mode=content_mode,
+            top_k=top_k,
+        )
+        pretty_top_rankings_report(report)
+        return
+
     default_reference = DEFAULT_SOURCE_IMDB_ID if DEFAULT_SOURCE_IMDB_ID else DEFAULT_SOURCE_TITLE
     print("Enter a reference movie title or IMDb ID.")
     print(f"Press Enter to use default: {default_reference}")
@@ -327,6 +792,21 @@ async def main() -> None:
     if resolve_reference_movie(reference_movie, movies) is None:
         print(f"Movie does not exist in the local dataset: {reference_movie}")
         print("Please enter a valid IMDb ID (for example: tt0133093) or an exact movie/show title.")
+        return
+
+    if action in {"2", "compare", "comparison", "c"}:
+        print("Enter the second movie title or IMDb ID to compare with.")
+        try:
+            second_reference = input("> ").strip()
+        except EOFError:
+            second_reference = ""
+
+        if not second_reference:
+            print("Second movie is required for comparison.")
+            return
+
+        comparison = compare_two_movies(reference_movie, second_reference, movies)
+        pretty_comparison_report(comparison)
         return
 
     user_prompt = (
