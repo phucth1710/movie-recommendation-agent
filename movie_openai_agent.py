@@ -11,8 +11,9 @@ from movie_agent_shared import (
     safe_int,
 )
 from movie_action_compare import compare_two_movies, pretty_comparison_report
-from movie_action_rank_set import rank_user_selected_set, pretty_user_set_ranking_report
-from movie_action_rank_top import rank_top_movies_shows_by_genre_or_year, pretty_top_rankings_report
+from movie_action_compare import run_compare_with_agent
+from movie_action_rank_set import pretty_user_set_ranking_report, run_rank_set_with_agent
+from movie_action_rank_top import pretty_top_rankings_report, run_rank_top_with_agent
 from movie_action_similar import (
     build_agent,
     movie_universe_summary,
@@ -49,7 +50,7 @@ async def main() -> None:
             print("You must provide at least one movie/show title or IMDb ID.")
             return
 
-        report = rank_user_selected_set(movies=movies, references=reference_array)
+        report = await run_rank_set_with_agent(reference_array)
         pretty_user_set_ranking_report(report)
         return
 
@@ -99,8 +100,7 @@ async def main() -> None:
                 print("Genre is required for genre ranking.")
                 return
 
-            report = rank_top_movies_shows_by_genre_or_year(
-                movies=movies,
+            report = await run_rank_top_with_agent(
                 genre=genre_input,
                 year=None,
                 content_mode=content_mode,
@@ -124,8 +124,7 @@ async def main() -> None:
             print("Invalid year. Please enter a valid numeric year.")
             return
 
-        report = rank_top_movies_shows_by_genre_or_year(
-            movies=movies,
+        report = await run_rank_top_with_agent(
             genre=None,
             year=year_value,
             content_mode=content_mode,
@@ -161,7 +160,7 @@ async def main() -> None:
             print("Second movie is required for comparison.")
             return
 
-        comparison = compare_two_movies(reference_movie, second_reference, movies)
+        comparison = await run_compare_with_agent(reference_movie, second_reference)
         pretty_comparison_report(comparison)
         return
 

@@ -1,6 +1,11 @@
+import os
 from typing import Any, Dict, List
 
+from agents import Agent, Runner, function_tool, set_default_openai_key
+from pydantic import BaseModel, ConfigDict
+
 from movie_agent_shared import (
+    load_movie_universe,
     movie_to_dict,
     parse_genre_tokens,
     resolve_reference_movie,
@@ -158,3 +163,79 @@ def pretty_comparison_report(report: Dict[str, Any]) -> None:
             print(f"- Audience scale edge goes to {_winner_name(comp.get('more_popular', 'tie'))}.")
         if comp.get("newer") != "tie":
             print(f"- Recency edge goes to {_winner_name(comp.get('newer', 'tie'))}.")
+
+
+@function_tool
+def compare_two_movies_from_references(first_reference: str, second_reference: str) -> Dict[str, Any]:
+    movies = load_movie_universe()
+    return compare_two_movies(first_reference, second_reference, movies)
+
+
+class ComparedMovie(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    imdb_id: str = ""
+    title: str = ""
+    content_type: str = ""
+    genre: str = ""
+    rating: float = 0.0
+    popularity: int = 0
+    year: int = 0
+    description: str = ""
+
+
+class ComparisonCore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    shared_genres: List[str]
+    rating_diff: float
+    popularity_diff: int
+    year_diff: int
+    higher_rated: str
+    more_popular: str
+    newer: str
+
+
+class ComparisonOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    first_movie: ComparedMovie
+    second_movie: ComparedMovie
+    comparison: ComparisonCore
+
+
+def build_compare_agent(model: str = "gpt-5-nano") -> Agent:
+    instruction = """
+You are a deterministic movie comparison agent.
+
+Tool usage rules:
+- ALWAYS call compare_two_movies_from_references(first_reference, second_reference) exactly once.
+- Do not use any external data source.
+
+Output rules:
+- Return the structured comparison object from the tool without inventing data.
+- Keep all numeric values exact.
+"""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("Please set OPENAI_API_KEY in your environment.")
+    set_default_openai_key(api_key)
+
+    return Agent(
+        name="Movie comparison agent",
+        instructions=instruction,
+        tools=[compare_two_movies_from_references],
+        model=model,
+        output_type=ComparisonOutput,
+    )
+
+
+async def run_compare_with_agent(
+    first_reference: str,
+    second_reference: str,
+    model: str = "gpt-5-nano",
+) -> Dict[str, Any]:
+    agent = build_compare_agent(model=model)
+    prompt = (
+        f"Compare these two references: first='{first_reference}', second='{second_reference}'. "
+        "Return the structured comparison output."
+    )
+    result = await Runner.run(agent, input=prompt)
+    return result.final_output.model_dump()

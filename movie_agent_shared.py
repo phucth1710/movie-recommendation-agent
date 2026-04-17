@@ -1,6 +1,10 @@
 import re
+import os
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
+
+from agents import Agent, Runner, function_tool, set_default_openai_key
+from pydantic import BaseModel, ConfigDict
 
 from imdb_csv_utils import find_movie_by_id, find_movie_by_name, read_movies
 from movie_agent_core import DEFAULT_SOURCE_IMDB_ID, DEFAULT_SOURCE_TITLE
@@ -117,3 +121,60 @@ def resolve_reference_movie(reference: str, movies: List[Any]) -> Optional[Any]:
         return partial_matches[0]
 
     return None
+
+
+@function_tool
+def resolve_movie_reference_tool(reference: str) -> Dict[str, Any]:
+    movies = load_movie_universe()
+    movie = resolve_reference_movie(reference, movies)
+    if movie is None:
+        return {"found": False, "reference": reference}
+    return {
+        "found": True,
+        "reference": reference,
+        "imdb_id": getattr(movie, "imdb_id", None),
+        "title": getattr(movie, "Name", None),
+        "content_type": getattr(movie, "Type", None),
+        "year": safe_int(getattr(movie, "Year", 0), 0),
+    }
+
+
+class SharedLookupOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    found: bool
+    reference: str
+    imdb_id: Optional[str] = None
+    title: Optional[str] = None
+    content_type: Optional[str] = None
+    year: Optional[int] = None
+
+
+def build_shared_agent(model: str = "gpt-5-nano") -> Agent:
+    instruction = """
+You are a deterministic movie reference lookup agent.
+
+Tool usage rules:
+- ALWAYS call resolve_movie_reference_tool(reference) exactly once.
+- Do not use external data.
+
+Output rules:
+- Return the exact structured lookup result.
+"""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("Please set OPENAI_API_KEY in your environment.")
+    set_default_openai_key(api_key)
+
+    return Agent(
+        name="Shared movie lookup agent",
+        instructions=instruction,
+        tools=[resolve_movie_reference_tool],
+        model=model,
+        output_type=SharedLookupOutput,
+    )
+
+
+async def run_shared_lookup_with_agent(reference: str, model: str = "gpt-5-nano") -> Dict[str, Any]:
+    agent = build_shared_agent(model=model)
+    result = await Runner.run(agent, input=f"Resolve this movie reference: {reference}")
+    return result.final_output.model_dump()

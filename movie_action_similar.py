@@ -145,7 +145,6 @@ class MovieRankingRow(BaseModel):
     composite_score: float
     why_it_ranks: str
 
-
 class MovieRanking(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source_movie: str
