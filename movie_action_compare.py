@@ -201,6 +201,14 @@ class ComparisonOutput(BaseModel):
     comparison: ComparisonCore
 
 
+class AIComparisonInsight(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    genre_and_tone: str
+    main_themes: str
+    critical_reception: str
+    taste_recommendation: str
+
+
 def build_compare_agent(model: str = "gpt-5-nano") -> Agent:
     instruction = """
 You are a deterministic movie comparison agent.
@@ -237,5 +245,65 @@ async def run_compare_with_agent(
         f"Compare these two references: first='{first_reference}', second='{second_reference}'. "
         "Return the structured comparison output."
     )
+    result = await Runner.run(agent, input=prompt)
+    return result.final_output.model_dump()
+
+
+def build_compare_insight_agent(model: str = "gpt-5-nano") -> Agent:
+    instruction = """
+You are a concise movie critic assistant.
+
+You will receive trusted structured comparison data for two titles.
+Write grounded analysis only from that input.
+
+Output fields:
+- genre_and_tone
+- main_themes
+- critical_reception
+- taste_recommendation
+
+Style:
+- Keep each field to 1-3 sentences.
+- Be specific and practical.
+- If data is limited, acknowledge uncertainty briefly.
+"""
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("Please set OPENAI_API_KEY in your environment.")
+    set_default_openai_key(api_key)
+
+    return Agent(
+        name="Movie comparison insight agent",
+        instructions=instruction,
+        tools=[],
+        model=model,
+        output_type=AIComparisonInsight,
+    )
+
+
+async def run_compare_insight_with_agent(
+    first_reference: str,
+    second_reference: str,
+    model: str = "gpt-5-nano",
+) -> Dict[str, Any]:
+    movies = load_movie_universe()
+    base = compare_two_movies(first_reference, second_reference, movies)
+    if base.get("error"):
+        return {"error": base.get("error", "Unable to generate AI insight.")}
+
+    first_movie = base.get("first_movie", {})
+    second_movie = base.get("second_movie", {})
+    comp = base.get("comparison", {})
+
+    prompt = (
+        "Compare these two titles using the provided structured data only.\n\n"
+        f"First movie: {first_movie}\n"
+        f"Second movie: {second_movie}\n"
+        f"Comparison metrics: {comp}\n\n"
+        "Explain genre/tone, themes, critical reception, and who may prefer which title."
+    )
+
+    agent = build_compare_insight_agent(model=model)
     result = await Runner.run(agent, input=prompt)
     return result.final_output.model_dump()

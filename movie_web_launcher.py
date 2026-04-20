@@ -1,11 +1,12 @@
 import threading
 import time
 import webbrowser
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from flask import Flask, jsonify, render_template_string, request
 
-from movie_action_compare import compare_two_movies
+from movie_action_compare import compare_two_movies, run_compare_insight_with_agent
 from movie_action_rank_set import rank_user_selected_set
 from movie_action_rank_top import rank_top_movies_shows_by_genre_or_year
 from movie_action_similar import rank_top_from_scoped_pool, scope_candidates
@@ -690,6 +691,17 @@ COMPARE_CONTENT = """
         <tbody id="compareRows"></tbody>
       </table>
     </div>
+    <div id="compareAiBlock" style="display:none; padding:14px; border-top:1px solid #e7edf7; background:#fbfdff;">
+      <h3 style="margin:0 0 10px; font-size:16px; color:#0f2855;">AI Comparison Insight</h3>
+      <div id="aiInsightLoading" style="display:none; align-items:center; gap:8px; color:#0f2855; margin:0 0 8px;">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Generating AI insight...</span>
+      </div>
+      <p id="aiGenreTone" style="margin:0 0 8px; color:#334155;"></p>
+      <p id="aiThemes" style="margin:0 0 8px; color:#334155;"></p>
+      <p id="aiReception" style="margin:0 0 8px; color:#334155;"></p>
+      <p id="aiTaste" style="margin:0; color:#0f2855; font-weight:600;"></p>
+    </div>
   </div>
 </section>
 """
@@ -709,6 +721,61 @@ COMPARE_SCRIPT = """
   const secondHeader = document.getElementById('secondHeader');
   const firstSuggestions = document.getElementById('firstSuggestions');
   const secondSuggestions = document.getElementById('secondSuggestions');
+  const compareAiBlock = document.getElementById('compareAiBlock');
+  const aiGenreTone = document.getElementById('aiGenreTone');
+  const aiThemes = document.getElementById('aiThemes');
+  const aiReception = document.getElementById('aiReception');
+  const aiTaste = document.getElementById('aiTaste');
+  const aiInsightLoading = document.getElementById('aiInsightLoading');
+
+  function setAiInsightLoading() {
+    aiInsightLoading.style.display = 'flex';
+    aiGenreTone.textContent = '';
+    aiThemes.textContent = '';
+    aiReception.textContent = '';
+    aiTaste.textContent = '';
+    compareAiBlock.style.display = 'block';
+  }
+
+  function hideAiInsight() {
+    compareAiBlock.style.display = 'none';
+    aiInsightLoading.style.display = 'none';
+    aiGenreTone.textContent = '';
+    aiThemes.textContent = '';
+    aiReception.textContent = '';
+    aiTaste.textContent = '';
+  }
+
+  function renderAiInsight(aiInsight) {
+    if (!aiInsight) {
+      hideAiInsight();
+      return;
+    }
+    aiInsightLoading.style.display = 'none';
+    aiGenreTone.textContent = `Genre and Tone: ${aiInsight.genre_and_tone || ''}`;
+    aiThemes.textContent = `Main Themes: ${aiInsight.main_themes || ''}`;
+    aiReception.textContent = `Critical Reception: ${aiInsight.critical_reception || ''}`;
+    aiTaste.textContent = `Taste Recommendation: ${aiInsight.taste_recommendation || ''}`;
+    compareAiBlock.style.display = 'block';
+  }
+
+  async function fetchAiInsight(first, second) {
+    try {
+      const res = await fetch('/api/compare-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ first_reference: first, second_reference: second })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        hideAiInsight();
+        return;
+      }
+      renderAiInsight(data.ai_insight || null);
+    } catch (err) {
+      hideAiInsight();
+    }
+  }
 
   function hideMovieSuggestions(dropdown) {
     dropdown.style.display = 'none';
@@ -812,8 +879,11 @@ COMPARE_SCRIPT = """
       appendCompareRow('Year diff (first-second)', comparison.year_diff ?? 0, '');
 
       compareResult.style.display = 'block';
+      setAiInsightLoading();
+      fetchAiInsight(first, second);
     } catch (err) {
       compareResult.style.display = 'none';
+      hideAiInsight();
       showCompareError('Network error while comparing movies.');
     } finally {
       setCompareLoading(false);
@@ -1760,7 +1830,32 @@ def compare_api() -> Any:
     result = compare_two_movies(first_reference=first_reference, second_reference=second_reference, movies=movies)
     if result.get("error"):
         return jsonify(result), 404
+
+    result["ai_insight"] = None
     return jsonify(result)
+
+
+@app.route("/api/compare-insight", methods=["POST"])
+def compare_insight_api() -> Any:
+    payload = request.get_json(silent=True) or {}
+    first_reference = str(payload.get("first_reference", "")).strip()
+    second_reference = str(payload.get("second_reference", "")).strip()
+    if not first_reference or not second_reference:
+        return jsonify({"error": "first_reference and second_reference are required"}), 400
+
+    try:
+        ai_insight = asyncio.run(
+            run_compare_insight_with_agent(
+                first_reference=first_reference,
+                second_reference=second_reference,
+                model="gpt-5-nano",
+            )
+        )
+        if ai_insight.get("error"):
+            return jsonify({"error": ai_insight.get("error", "Unable to generate AI insight")}), 502
+        return jsonify({"ai_insight": ai_insight})
+    except Exception:
+        return jsonify({"error": "AI insight is currently unavailable"}), 502
 
 
 @app.route("/api/rank-set", methods=["POST"])
