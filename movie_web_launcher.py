@@ -2,9 +2,11 @@ import threading
 import time
 import webbrowser
 import asyncio
+import os
 from typing import Any, Dict, List, Optional
 
 from flask import Flask, jsonify, render_template_string, request
+from agents import Agent, Runner, set_default_openai_key
 
 from movie_action_compare import compare_two_movies, run_compare_insight_with_agent
 from movie_action_rank_set import rank_user_selected_set
@@ -421,6 +423,7 @@ SIMILAR_CONTENT = """
             <th>Genre</th>
             <th>Similarity</th>
             <th>Composite</th>
+            <th>AI Insight</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -454,7 +457,12 @@ SIMILAR_SCRIPT = """
   };
 
   let defaultRowsData = [];
+  let currentRowsData = [];
+  let currentSourceReference = '';
   let activeSort = { key: null, stateIndex: 0 };
+  const similarAiCache = {};
+  const similarAiExpanded = {};
+  const similarAiLoading = {};
 
   function showError(msg) {
     if (!msg) {
@@ -501,8 +509,15 @@ SIMILAR_SCRIPT = """
   }
 
   function renderRows(rowData) {
+    currentRowsData = rowData;
     rows.innerHTML = '';
     rowData.forEach((row, index) => {
+      const imdbId = row.imdb_id || '';
+      const isLoading = !!similarAiLoading[imdbId];
+      const hasInsight = !!similarAiCache[imdbId];
+      const isExpanded = !!similarAiExpanded[imdbId];
+      const buttonLabel = isLoading ? 'Loading...' : (isExpanded ? 'Hide insight' : 'AI insight');
+
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${index + 1}</td>
@@ -515,8 +530,57 @@ SIMILAR_SCRIPT = """
         <td>${row.genre || ''}</td>
         <td>${Number(row.similarity_score || 0).toFixed(3)}</td>
         <td>${Number(row.composite_score || 0).toFixed(3)}</td>
+        <td><button class="btn" data-ai-insight-btn="1" data-imdb-id="${imdbId}" style="padding:6px 10px; font-size:12px; border-radius:8px;">${buttonLabel}</button></td>
       `;
       rows.appendChild(tr);
+
+      if (isExpanded && hasInsight) {
+        const detailTr = document.createElement('tr');
+        detailTr.innerHTML = `<td colspan="11" style="background:#f8fbff; color:#334155; line-height:1.45;"><strong>AI Insight:</strong> ${similarAiCache[imdbId]}</td>`;
+        rows.appendChild(detailTr);
+      }
+    });
+
+    rows.querySelectorAll('button[data-ai-insight-btn="1"]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const imdbId = button.getAttribute('data-imdb-id') || '';
+        const targetRow = (currentRowsData || []).find((r) => String(r.imdb_id || '') === imdbId);
+        if (!targetRow) return;
+
+        if (similarAiCache[imdbId]) {
+          similarAiExpanded[imdbId] = !similarAiExpanded[imdbId];
+          renderRows(currentRowsData);
+          return;
+        }
+
+        similarAiLoading[imdbId] = true;
+        renderRows(currentRowsData);
+        try {
+          const res = await fetch('/api/similar-insight', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              source_reference: currentSourceReference,
+              candidate_imdb_id: targetRow.imdb_id || '',
+              candidate_title: targetRow.title || '',
+              similarity_score: targetRow.similarity_score || 0,
+              composite_score: targetRow.composite_score || 0,
+            })
+          });
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            similarAiCache[imdbId] = 'AI insight is currently unavailable for this row.';
+          } else {
+            similarAiCache[imdbId] = data.insight || 'No AI insight returned.';
+          }
+        } catch (err) {
+          similarAiCache[imdbId] = 'AI insight is currently unavailable for this row.';
+        } finally {
+          similarAiLoading[imdbId] = false;
+          similarAiExpanded[imdbId] = true;
+          renderRows(currentRowsData);
+        }
+      });
     });
   }
 
@@ -622,8 +686,12 @@ SIMILAR_SCRIPT = """
 
       const source = data.source_movie || {};
       meta.textContent = `Source: ${source.title || 'N/A'} [${source.imdb_id || 'N/A'}] | Scope: ${data.scope_size} | Top: ${data.top_k}`;
+      currentSourceReference = source.imdb_id || q;
 
       defaultRowsData = [...(data.results || [])];
+      Object.keys(similarAiCache).forEach((key) => { delete similarAiCache[key]; });
+      Object.keys(similarAiExpanded).forEach((key) => { delete similarAiExpanded[key]; });
+      Object.keys(similarAiLoading).forEach((key) => { delete similarAiLoading[key]; });
       activeSort = { key: null, stateIndex: 0 };
       updateSortHeaderLabel(null, 'default');
       renderRows(defaultRowsData);
@@ -965,6 +1033,14 @@ RANK_SET_CONTENT = """
         <tbody id="rankSetRows"></tbody>
       </table>
     </div>
+    <div id="rankSetAiBlock" style="display:none; padding:14px; border-top:1px solid #e7edf7; background:#fbfdff;">
+      <h3 style="margin:0 0 10px; font-size:16px; color:#0f2855;">AI Ranking Insight</h3>
+      <div id="rankSetAiLoading" style="display:none; align-items:center; gap:8px; color:#0f2855; margin:0 0 8px;">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Generating AI insight...</span>
+      </div>
+      <p id="rankSetAiText" style="margin:0; color:#334155; line-height:1.5;"></p>
+    </div>
   </div>
 </section>
 """
@@ -980,6 +1056,49 @@ RANK_SET_SCRIPT = """
   const rankSetMeta = document.getElementById('rankSetMeta');
   const rankSetRows = document.getElementById('rankSetRows');
   const setSuggestions = document.getElementById('setSuggestions');
+  const rankSetAiBlock = document.getElementById('rankSetAiBlock');
+  const rankSetAiLoading = document.getElementById('rankSetAiLoading');
+  const rankSetAiText = document.getElementById('rankSetAiText');
+
+  function setRankSetAiLoading() {
+    rankSetAiBlock.style.display = 'block';
+    rankSetAiLoading.style.display = 'flex';
+    rankSetAiText.textContent = '';
+  }
+
+  function hideRankSetAi() {
+    rankSetAiBlock.style.display = 'none';
+    rankSetAiLoading.style.display = 'none';
+    rankSetAiText.textContent = '';
+  }
+
+  function renderRankSetAi(text) {
+    if (!text) {
+      hideRankSetAi();
+      return;
+    }
+    rankSetAiBlock.style.display = 'block';
+    rankSetAiLoading.style.display = 'none';
+    rankSetAiText.textContent = text;
+  }
+
+  async function fetchRankSetAiInsight(references) {
+    try {
+      const res = await fetch('/api/rank-set-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ references })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        hideRankSetAi();
+        return;
+      }
+      renderRankSetAi(data.insight || '');
+    } catch (err) {
+      hideRankSetAi();
+    }
+  }
 
   function hideSetSuggestions() {
     setSuggestions.style.display = 'none';
@@ -1092,8 +1211,11 @@ RANK_SET_SCRIPT = """
       });
 
       rankSetResult.style.display = 'block';
+      setRankSetAiLoading();
+      fetchRankSetAiInsight(references);
     } catch (err) {
       rankSetResult.style.display = 'none';
+      hideRankSetAi();
       showRankSetError('Network error while ranking set.');
     } finally {
       setRankSetLoading(false);
@@ -1159,6 +1281,14 @@ RANK_TOP_CONTENT = """
         <tbody id="rankTopRows"></tbody>
       </table>
     </div>
+    <div id="rankTopAiBlock" style="display:none; padding:14px; border-top:1px solid #e7edf7; background:#fbfdff;">
+      <h3 style="margin:0 0 10px; font-size:16px; color:#0f2855;">AI Ranking Insight</h3>
+      <div id="rankTopAiLoading" style="display:none; align-items:center; gap:8px; color:#0f2855; margin:0 0 8px;">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Generating AI insight...</span>
+      </div>
+      <p id="rankTopAiText" style="margin:0; color:#334155; line-height:1.5;"></p>
+    </div>
   </div>
 </section>
 """
@@ -1178,6 +1308,49 @@ RANK_TOP_SCRIPT = """
   const rankTopRows = document.getElementById('rankTopRows');
   const topGenreSuggestions = document.getElementById('topGenreSuggestions');
   const topYearSuggestions = document.getElementById('topYearSuggestions');
+  const rankTopAiBlock = document.getElementById('rankTopAiBlock');
+  const rankTopAiLoading = document.getElementById('rankTopAiLoading');
+  const rankTopAiText = document.getElementById('rankTopAiText');
+
+  function setRankTopAiLoading() {
+    rankTopAiBlock.style.display = 'block';
+    rankTopAiLoading.style.display = 'flex';
+    rankTopAiText.textContent = '';
+  }
+
+  function hideRankTopAi() {
+    rankTopAiBlock.style.display = 'none';
+    rankTopAiLoading.style.display = 'none';
+    rankTopAiText.textContent = '';
+  }
+
+  function renderRankTopAi(text) {
+    if (!text) {
+      hideRankTopAi();
+      return;
+    }
+    rankTopAiBlock.style.display = 'block';
+    rankTopAiLoading.style.display = 'none';
+    rankTopAiText.textContent = text;
+  }
+
+  async function fetchRankTopAiInsight(payload) {
+    try {
+      const res = await fetch('/api/rank-top-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        hideRankTopAi();
+        return;
+      }
+      renderRankTopAi(data.insight || '');
+    } catch (err) {
+      hideRankTopAi();
+    }
+  }
 
   function hideTopSuggestions(dropdown) {
     dropdown.style.display = 'none';
@@ -1275,17 +1448,18 @@ RANK_TOP_SCRIPT = """
 
     showRankTopError('');
     setRankTopLoading(true);
+    const requestPayload = {
+      genre,
+      year: parsedYear || 0,
+      content_mode: topMode.value,
+      top_k: parsedTopK,
+    };
 
     try {
       const res = await fetch('/api/rank-top', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          genre,
-          year: parsedYear || 0,
-          content_mode: topMode.value,
-          top_k: parsedTopK,
-        })
+        body: JSON.stringify(requestPayload)
       });
       const data = await res.json();
 
@@ -1315,8 +1489,11 @@ RANK_TOP_SCRIPT = """
       });
 
       rankTopResult.style.display = 'block';
+      setRankTopAiLoading();
+      fetchRankTopAiInsight(requestPayload);
     } catch (err) {
       rankTopResult.style.display = 'none';
+      hideRankTopAi();
       showRankTopError('Network error while ranking top movies.');
     } finally {
       setRankTopLoading(false);
@@ -1372,6 +1549,14 @@ BASIC_CONTENT = """
         <tbody id="basicRows"></tbody>
       </table>
     </div>
+    <div id="basicAiBlock" style="display:none; padding:14px; border-top:1px solid #e7edf7; background:#fbfdff;">
+      <h3 style="margin:0 0 10px; font-size:16px; color:#0f2855;">AI Description Insight</h3>
+      <div id="basicAiLoading" style="display:none; align-items:center; gap:8px; color:#0f2855; margin:0 0 8px;">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Generating AI insight...</span>
+      </div>
+      <p id="basicAiText" style="margin:0; color:#334155; line-height:1.5;"></p>
+    </div>
   </div>
 </section>
 """
@@ -1388,6 +1573,49 @@ BASIC_SCRIPT = """
   const basicRows = document.getElementById('basicRows');
   const basicDescription = document.getElementById('basicDescription');
   const basicSuggestions = document.getElementById('basicSuggestions');
+  const basicAiBlock = document.getElementById('basicAiBlock');
+  const basicAiLoading = document.getElementById('basicAiLoading');
+  const basicAiText = document.getElementById('basicAiText');
+
+  function setBasicAiLoading() {
+    basicAiBlock.style.display = 'block';
+    basicAiLoading.style.display = 'flex';
+    basicAiText.textContent = '';
+  }
+
+  function hideBasicAi() {
+    basicAiBlock.style.display = 'none';
+    basicAiLoading.style.display = 'none';
+    basicAiText.textContent = '';
+  }
+
+  function renderBasicAi(text) {
+    if (!text) {
+      hideBasicAi();
+      return;
+    }
+    basicAiBlock.style.display = 'block';
+    basicAiLoading.style.display = 'none';
+    basicAiText.textContent = text;
+  }
+
+  async function fetchBasicAiInsight(reference) {
+    try {
+      const res = await fetch('/api/basic-description-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reference })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        hideBasicAi();
+        return;
+      }
+      renderBasicAi(data.insight || '');
+    } catch (err) {
+      hideBasicAi();
+    }
+  }
 
   function hideBasicSuggestions() {
     basicSuggestions.style.display = 'none';
@@ -1483,8 +1711,11 @@ BASIC_SCRIPT = """
       addBasicRow('Description', data.description || '');
 
       basicResult.style.display = 'block';
+      setBasicAiLoading();
+      fetchBasicAiInsight(reference);
     } catch (err) {
       basicResult.style.display = 'none';
+      hideBasicAi();
       showBasicError('Network error while loading description.');
     } finally {
       setBasicLoading(false);
@@ -1724,6 +1955,27 @@ def _recommend_from_reference(reference: str, scope_size: int, top_k: int) -> Di
     }
 
 
+async def _run_ai_text_insight(prompt: str) -> Dict[str, Any]:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return {"error": "OPENAI_API_KEY is not set"}
+
+    set_default_openai_key(api_key)
+    agent = Agent(
+        name="Movie web insight agent",
+        instructions=(
+            "You are a concise movie assistant. "
+            "Use only the provided structured data. "
+            "Return plain text in 3-6 short sentences."
+        ),
+        tools=[],
+        model="gpt-5-nano",
+    )
+
+    result = await Runner.run(agent, input=prompt)
+    return {"insight": str(result.final_output).strip()}
+
+
 @app.route("/", methods=["GET"])
 def index() -> str:
     return _render_page(
@@ -1791,14 +2043,14 @@ def suggest() -> Any:
 
 @app.route("/suggest/genres", methods=["GET"])
 def suggest_genres() -> Any:
-  query = request.args.get("q", "")
-  return jsonify({"items": _suggest_genres(query)})
+    query = request.args.get("q", "")
+    return jsonify({"items": _suggest_genres(query)})
 
 
 @app.route("/suggest/years", methods=["GET"])
 def suggest_years() -> Any:
-  query = request.args.get("q", "")
-  return jsonify({"items": _suggest_years(query)})
+    query = request.args.get("q", "")
+    return jsonify({"items": _suggest_years(query)})
 
 
 @app.route("/api/recommend", methods=["POST"])
@@ -1854,6 +2106,154 @@ def compare_insight_api() -> Any:
         if ai_insight.get("error"):
             return jsonify({"error": ai_insight.get("error", "Unable to generate AI insight")}), 502
         return jsonify({"ai_insight": ai_insight})
+    except Exception:
+        return jsonify({"error": "AI insight is currently unavailable"}), 502
+
+
+@app.route("/api/similar-insight", methods=["POST"])
+def similar_insight_api() -> Any:
+    payload = request.get_json(silent=True) or {}
+    source_reference = str(payload.get("source_reference", "")).strip()
+    candidate_imdb_id = str(payload.get("candidate_imdb_id", "")).strip()
+    candidate_title = str(payload.get("candidate_title", "")).strip()
+
+    if not source_reference or (not candidate_imdb_id and not candidate_title):
+        return jsonify({"error": "source_reference and candidate movie reference are required"}), 400
+
+    movies = load_movie_universe()
+    source_movie = resolve_reference_movie(source_reference, movies)
+    candidate_ref = candidate_imdb_id or candidate_title
+    candidate_movie = resolve_reference_movie(candidate_ref, movies)
+
+    if source_movie is None or candidate_movie is None:
+        return jsonify({"error": "Could not resolve source or candidate movie"}), 404
+
+    source_data = movie_to_dict(source_movie)
+    candidate_data = movie_to_dict(candidate_movie)
+    similarity_score = safe_float(payload.get("similarity_score", 0.0), 0.0)
+    composite_score = safe_float(payload.get("composite_score", 0.0), 0.0)
+
+    prompt = (
+        "Explain why the candidate is similar to the source movie. "
+        "Mention genre/tone overlap, era/type alignment, and rating/popularity context. "
+        "Also comment on what audience might prefer this candidate.\n\n"
+        f"Source movie: {source_data}\n"
+        f"Candidate movie: {candidate_data}\n"
+        f"Scores: similarity_score={similarity_score:.3f}, composite_score={composite_score:.3f}\n"
+    )
+
+    try:
+        insight = asyncio.run(_run_ai_text_insight(prompt))
+        if insight.get("error"):
+            return jsonify({"error": insight.get("error")}), 502
+        return jsonify({"insight": insight.get("insight", "")})
+    except Exception:
+        return jsonify({"error": "AI insight is currently unavailable"}), 502
+
+
+@app.route("/api/rank-set-insight", methods=["POST"])
+def rank_set_insight_api() -> Any:
+    payload = request.get_json(silent=True) or {}
+    references = payload.get("references", [])
+    if not isinstance(references, list):
+        return jsonify({"error": "references must be a list"}), 400
+
+    normalized_refs = [str(item or "").strip() for item in references if str(item or "").strip()]
+    if not normalized_refs:
+        return jsonify({"error": "references are required"}), 400
+
+    movies = load_movie_universe()
+    report = rank_user_selected_set(movies=movies, references=normalized_refs)
+
+    prompt = (
+        "Provide a concise AI insight for this ranked movie set. "
+        "Explain why top items rank higher, any trade-offs, and how a user can pick among top 3.\n\n"
+        f"Ranking metadata: input_size={report.get('input_size')}, "
+        f"resolved_count={report.get('resolved_count')}, "
+        f"unresolved={report.get('unresolved')}\n"
+        f"Top results: {report.get('results', [])[:10]}"
+    )
+
+    try:
+        insight = asyncio.run(_run_ai_text_insight(prompt))
+        if insight.get("error"):
+            return jsonify({"error": insight.get("error")}), 502
+        return jsonify({"insight": insight.get("insight", "")})
+    except Exception:
+        return jsonify({"error": "AI insight is currently unavailable"}), 502
+
+
+@app.route("/api/rank-top-insight", methods=["POST"])
+def rank_top_insight_api() -> Any:
+    payload = request.get_json(silent=True) or {}
+
+    genre = str(payload.get("genre", "")).strip() or None
+    year_raw = payload.get("year", 0)
+    year: Optional[int] = None
+    if year_raw not in (None, "", 0):
+        try:
+            year = int(year_raw)
+        except (TypeError, ValueError):
+            return jsonify({"error": "year must be an integer"}), 400
+
+    content_mode = str(payload.get("content_mode", "both")).strip().lower() or "both"
+    if content_mode not in {"both", "movie", "show"}:
+        return jsonify({"error": "content_mode must be one of: both, movie, show"}), 400
+
+    try:
+        top_k = int(payload.get("top_k", 10))
+    except (TypeError, ValueError):
+        return jsonify({"error": "top_k must be an integer"}), 400
+    top_k = max(1, top_k)
+
+    movies = load_movie_universe()
+    report = rank_top_movies_shows_by_genre_or_year(
+        movies=movies,
+        genre=genre,
+        year=year,
+        content_mode=content_mode,
+        top_k=top_k,
+    )
+
+    prompt = (
+        "Provide a concise AI insight for these top-ranked results. "
+        "Explain the ranking pattern and highlight why the top picks stand out.\n\n"
+        f"Criteria: {report.get('criteria')}\n"
+        f"Candidate count: {report.get('candidate_count')}\n"
+        f"Top results: {report.get('results', [])[:10]}"
+    )
+
+    try:
+        insight = asyncio.run(_run_ai_text_insight(prompt))
+        if insight.get("error"):
+            return jsonify({"error": insight.get("error")}), 502
+        return jsonify({"insight": insight.get("insight", "")})
+    except Exception:
+        return jsonify({"error": "AI insight is currently unavailable"}), 502
+
+
+@app.route("/api/basic-description-insight", methods=["POST"])
+def basic_description_insight_api() -> Any:
+    payload = request.get_json(silent=True) or {}
+    reference = str(payload.get("reference", "")).strip()
+    if not reference:
+        return jsonify({"error": "reference is required"}), 400
+
+    base = _build_basic_description(reference)
+    if base.get("error"):
+        return jsonify(base), 404
+
+    prompt = (
+        "Provide a concise AI insight for this movie profile. "
+        "Include: who might enjoy it, viewing mood, and one watch-tip.\n\n"
+        f"Movie profile: {base}"
+    )
+
+    try:
+        insight = asyncio.run(_run_ai_text_insight(prompt))
+        if insight.get("error"):
+            return jsonify({"error": insight.get("error")}), 502
+        return jsonify({"insight": insight.get("insight", "")})
     except Exception:
         return jsonify({"error": "AI insight is currently unavailable"}), 502
 
