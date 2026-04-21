@@ -344,6 +344,33 @@ PAGE_SHELL = """
   <main class="wrap">
     {{ content | safe }}
   </main>
+  <script>
+    (function setupMovieStateStore() {
+      const PREFIX = 'movie-web-state:';
+      window.movieStateStore = {
+        save: function (key, value) {
+          try {
+            localStorage.setItem(PREFIX + key, JSON.stringify(value));
+          } catch (err) {
+          }
+        },
+        load: function (key) {
+          try {
+            const raw = localStorage.getItem(PREFIX + key);
+            return raw ? JSON.parse(raw) : null;
+          } catch (err) {
+            return null;
+          }
+        },
+        remove: function (key) {
+          try {
+            localStorage.removeItem(PREFIX + key);
+          } catch (err) {
+          }
+        }
+      };
+    })();
+  </script>
   {{ script | safe }}
 </body>
 </html>
@@ -436,6 +463,7 @@ SIMILAR_CONTENT = """
 
 SIMILAR_SCRIPT = """
 <script>
+  const SIMILAR_STATE_KEY = 'similar.v1';
   const queryInput = document.getElementById('query');
   const searchBtn = document.getElementById('searchBtn');
   const suggestions = document.getElementById('suggestions');
@@ -463,6 +491,42 @@ SIMILAR_SCRIPT = """
   const similarAiCache = {};
   const similarAiExpanded = {};
   const similarAiLoading = {};
+
+  function saveSimilarState() {
+    window.movieStateStore.save(SIMILAR_STATE_KEY, {
+      query: queryInput.value || '',
+      meta: meta.textContent || '',
+      sourceReference: currentSourceReference || '',
+      defaultRowsData,
+      currentRowsData,
+      activeSort,
+      aiCache: similarAiCache,
+      aiExpanded: similarAiExpanded,
+    });
+  }
+
+  function restoreSimilarState() {
+    const state = window.movieStateStore.load(SIMILAR_STATE_KEY);
+    if (!state || !Array.isArray(state.defaultRowsData) || !state.defaultRowsData.length) {
+      return;
+    }
+    queryInput.value = state.query || '';
+    meta.textContent = state.meta || '';
+    currentSourceReference = state.sourceReference || '';
+    defaultRowsData = state.defaultRowsData || [];
+    currentRowsData = state.currentRowsData || state.defaultRowsData || [];
+    activeSort = state.activeSort || { key: null, stateIndex: 0 };
+
+    Object.keys(similarAiCache).forEach((key) => { delete similarAiCache[key]; });
+    Object.keys(similarAiExpanded).forEach((key) => { delete similarAiExpanded[key]; });
+    const cached = state.aiCache || {};
+    const expanded = state.aiExpanded || {};
+    Object.keys(cached).forEach((key) => { similarAiCache[key] = cached[key]; });
+    Object.keys(expanded).forEach((key) => { similarAiExpanded[key] = !!expanded[key]; });
+
+    renderRows(currentRowsData);
+    resultCard.style.display = 'block';
+  }
 
   function showError(msg) {
     if (!msg) {
@@ -550,6 +614,7 @@ SIMILAR_SCRIPT = """
         if (similarAiCache[imdbId]) {
           similarAiExpanded[imdbId] = !similarAiExpanded[imdbId];
           renderRows(currentRowsData);
+          saveSimilarState();
           return;
         }
 
@@ -579,6 +644,7 @@ SIMILAR_SCRIPT = """
           similarAiLoading[imdbId] = false;
           similarAiExpanded[imdbId] = true;
           renderRows(currentRowsData);
+          saveSimilarState();
         }
       });
     });
@@ -620,6 +686,7 @@ SIMILAR_SCRIPT = """
 
     updateSortHeaderLabel(sortKey, state);
     renderRows(sorted);
+    saveSimilarState();
   }
 
   sortHeaders.forEach((th) => {
@@ -696,6 +763,7 @@ SIMILAR_SCRIPT = """
       updateSortHeaderLabel(null, 'default');
       renderRows(defaultRowsData);
       resultCard.style.display = 'block';
+      saveSimilarState();
     } catch (err) {
       resultCard.style.display = 'none';
       showError('Network error while fetching recommendations.');
@@ -724,6 +792,8 @@ SIMILAR_SCRIPT = """
       hideSuggestions();
     }
   });
+
+  restoreSimilarState();
 </script>
 """
 
@@ -777,6 +847,7 @@ COMPARE_CONTENT = """
 
 COMPARE_SCRIPT = """
 <script>
+  const COMPARE_STATE_KEY = 'compare.v1';
   const compareBtn = document.getElementById('compareBtn');
   const firstRef = document.getElementById('firstRef');
   const secondRef = document.getElementById('secondRef');
@@ -795,6 +866,7 @@ COMPARE_SCRIPT = """
   const aiReception = document.getElementById('aiReception');
   const aiTaste = document.getElementById('aiTaste');
   const aiInsightLoading = document.getElementById('aiInsightLoading');
+  let lastCompareData = null;
 
   function setAiInsightLoading() {
     aiInsightLoading.style.display = 'flex';
@@ -825,6 +897,66 @@ COMPARE_SCRIPT = """
     aiReception.textContent = `Critical Reception: ${aiInsight.critical_reception || ''}`;
     aiTaste.textContent = `Taste Recommendation: ${aiInsight.taste_recommendation || ''}`;
     compareAiBlock.style.display = 'block';
+    saveCompareState();
+  }
+
+  function saveCompareState() {
+    window.movieStateStore.save(COMPARE_STATE_KEY, {
+      firstRef: firstRef.value || '',
+      secondRef: secondRef.value || '',
+      data: lastCompareData,
+      ai: {
+        genreTone: aiGenreTone.textContent || '',
+        themes: aiThemes.textContent || '',
+        reception: aiReception.textContent || '',
+        taste: aiTaste.textContent || '',
+        visible: compareAiBlock.style.display === 'block' && aiInsightLoading.style.display !== 'flex',
+      },
+    });
+  }
+
+  function restoreCompareState() {
+    const state = window.movieStateStore.load(COMPARE_STATE_KEY);
+    if (!state) return;
+    firstRef.value = state.firstRef || '';
+    secondRef.value = state.secondRef || '';
+    if (state.data) {
+      renderCompareResult(state.data);
+      lastCompareData = state.data;
+      if (state.ai && state.ai.visible) {
+        aiInsightLoading.style.display = 'none';
+        aiGenreTone.textContent = state.ai.genreTone || '';
+        aiThemes.textContent = state.ai.themes || '';
+        aiReception.textContent = state.ai.reception || '';
+        aiTaste.textContent = state.ai.taste || '';
+        compareAiBlock.style.display = 'block';
+      }
+    }
+  }
+
+  function renderCompareResult(data) {
+      const firstMovie = data.first_movie || {};
+      const secondMovie = data.second_movie || {};
+      const comparison = data.comparison || {};
+
+      firstHeader.textContent = firstMovie.title || 'First';
+      secondHeader.textContent = secondMovie.title || 'Second';
+
+      compareMeta.textContent = `Shared genres: ${(comparison.shared_genres || []).join(', ') || 'None'} | Higher rated: ${comparison.higher_rated || 'tie'} | More popular: ${comparison.more_popular || 'tie'}`;
+      compareRows.innerHTML = '';
+
+      appendCompareRow('IMDb ID', firstMovie.imdb_id, secondMovie.imdb_id);
+      appendCompareRow('Type', firstMovie.content_type, secondMovie.content_type);
+      appendCompareRow('Genre', firstMovie.genre, secondMovie.genre);
+      appendCompareRow('Year', firstMovie.year, secondMovie.year);
+      appendCompareRow('Rating', Number(firstMovie.rating || 0).toFixed(1), Number(secondMovie.rating || 0).toFixed(1));
+      appendCompareRow('Popularity', firstMovie.popularity || 0, secondMovie.popularity || 0);
+      appendCompareRow('Description', firstMovie.description || '', secondMovie.description || '');
+      appendCompareRow('Rating diff (first-second)', comparison.rating_diff ?? 0, '');
+      appendCompareRow('Popularity diff (first-second)', comparison.popularity_diff ?? 0, '');
+      appendCompareRow('Year diff (first-second)', comparison.year_diff ?? 0, '');
+
+      compareResult.style.display = 'block';
   }
 
   async function fetchAiInsight(first, second) {
@@ -924,30 +1056,10 @@ COMPARE_SCRIPT = """
         showCompareError(data.error || 'Could not compare these references.');
         return;
       }
-
-      const firstMovie = data.first_movie || {};
-      const secondMovie = data.second_movie || {};
-      const comparison = data.comparison || {};
-
-      firstHeader.textContent = firstMovie.title || 'First';
-      secondHeader.textContent = secondMovie.title || 'Second';
-
-      compareMeta.textContent = `Shared genres: ${(comparison.shared_genres || []).join(', ') || 'None'} | Higher rated: ${comparison.higher_rated || 'tie'} | More popular: ${comparison.more_popular || 'tie'}`;
-      compareRows.innerHTML = '';
-
-      appendCompareRow('IMDb ID', firstMovie.imdb_id, secondMovie.imdb_id);
-      appendCompareRow('Type', firstMovie.content_type, secondMovie.content_type);
-      appendCompareRow('Genre', firstMovie.genre, secondMovie.genre);
-      appendCompareRow('Year', firstMovie.year, secondMovie.year);
-      appendCompareRow('Rating', Number(firstMovie.rating || 0).toFixed(1), Number(secondMovie.rating || 0).toFixed(1));
-      appendCompareRow('Popularity', firstMovie.popularity || 0, secondMovie.popularity || 0);
-      appendCompareRow('Description', firstMovie.description || '', secondMovie.description || '');
-      appendCompareRow('Rating diff (first-second)', comparison.rating_diff ?? 0, '');
-      appendCompareRow('Popularity diff (first-second)', comparison.popularity_diff ?? 0, '');
-      appendCompareRow('Year diff (first-second)', comparison.year_diff ?? 0, '');
-
-      compareResult.style.display = 'block';
+      lastCompareData = data;
+      renderCompareResult(data);
       setAiInsightLoading();
+      saveCompareState();
       fetchAiInsight(first, second);
     } catch (err) {
       compareResult.style.display = 'none';
@@ -993,6 +1105,8 @@ COMPARE_SCRIPT = """
       hideMovieSuggestions(secondSuggestions);
     }
   });
+
+  restoreCompareState();
 </script>
 """
 
@@ -1048,6 +1162,7 @@ RANK_SET_CONTENT = """
 
 RANK_SET_SCRIPT = """
 <script>
+  const RANK_SET_STATE_KEY = 'rank-set.v1';
   const rankSetBtn = document.getElementById('rankSetBtn');
   const setInput = document.getElementById('setInput');
   const rankSetLoading = document.getElementById('rankSetLoading');
@@ -1059,6 +1174,55 @@ RANK_SET_SCRIPT = """
   const rankSetAiBlock = document.getElementById('rankSetAiBlock');
   const rankSetAiLoading = document.getElementById('rankSetAiLoading');
   const rankSetAiText = document.getElementById('rankSetAiText');
+  let lastRankSetData = null;
+
+  function saveRankSetState() {
+    window.movieStateStore.save(RANK_SET_STATE_KEY, {
+      input: setInput.value || '',
+      data: lastRankSetData,
+      aiText: rankSetAiText.textContent || '',
+      aiVisible: rankSetAiBlock.style.display === 'block' && rankSetAiLoading.style.display !== 'flex',
+    });
+  }
+
+  function renderRankSetResult(data) {
+    const unresolved = (data.unresolved || []).join(', ') || 'None';
+    rankSetMeta.textContent = `Input: ${data.input_size || 0} | Resolved: ${data.resolved_count || 0} | Unresolved: ${unresolved}`;
+
+    rankSetRows.innerHTML = '';
+    (data.results || []).forEach((row, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx + 1}</td>
+        <td>${row.title || ''}</td>
+        <td>${row.imdb_id || ''}</td>
+        <td>${row.content_type || ''}</td>
+        <td>${row.year ?? ''}</td>
+        <td>${Number(row.rating || 0).toFixed(1)}</td>
+        <td>${row.popularity ?? ''}</td>
+        <td>${row.length ?? ''}</td>
+        <td>${row.genre || ''}</td>
+      `;
+      rankSetRows.appendChild(tr);
+    });
+
+    rankSetResult.style.display = 'block';
+  }
+
+  function restoreRankSetState() {
+    const state = window.movieStateStore.load(RANK_SET_STATE_KEY);
+    if (!state) return;
+    setInput.value = state.input || '';
+    if (state.data) {
+      lastRankSetData = state.data;
+      renderRankSetResult(state.data);
+      if (state.aiVisible && state.aiText) {
+        rankSetAiBlock.style.display = 'block';
+        rankSetAiLoading.style.display = 'none';
+        rankSetAiText.textContent = state.aiText;
+      }
+    }
+  }
 
   function setRankSetAiLoading() {
     rankSetAiBlock.style.display = 'block';
@@ -1080,6 +1244,7 @@ RANK_SET_SCRIPT = """
     rankSetAiBlock.style.display = 'block';
     rankSetAiLoading.style.display = 'none';
     rankSetAiText.textContent = text;
+    saveRankSetState();
   }
 
   async function fetchRankSetAiInsight(references) {
@@ -1190,28 +1355,10 @@ RANK_SET_SCRIPT = """
         return;
       }
 
-      const unresolved = (data.unresolved || []).join(', ') || 'None';
-      rankSetMeta.textContent = `Input: ${data.input_size || 0} | Resolved: ${data.resolved_count || 0} | Unresolved: ${unresolved}`;
-
-      rankSetRows.innerHTML = '';
-      (data.results || []).forEach((row, idx) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${idx + 1}</td>
-          <td>${row.title || ''}</td>
-          <td>${row.imdb_id || ''}</td>
-          <td>${row.content_type || ''}</td>
-          <td>${row.year ?? ''}</td>
-          <td>${Number(row.rating || 0).toFixed(1)}</td>
-          <td>${row.popularity ?? ''}</td>
-          <td>${row.length ?? ''}</td>
-          <td>${row.genre || ''}</td>
-        `;
-        rankSetRows.appendChild(tr);
-      });
-
-      rankSetResult.style.display = 'block';
+      lastRankSetData = data;
+      renderRankSetResult(data);
       setRankSetAiLoading();
+      saveRankSetState();
       fetchRankSetAiInsight(references);
     } catch (err) {
       rankSetResult.style.display = 'none';
@@ -1235,6 +1382,8 @@ RANK_SET_SCRIPT = """
       hideSetSuggestions();
     }
   });
+
+  restoreRankSetState();
 </script>
 """
 
@@ -1296,6 +1445,7 @@ RANK_TOP_CONTENT = """
 
 RANK_TOP_SCRIPT = """
 <script>
+  const RANK_TOP_STATE_KEY = 'rank-top.v1';
   const rankTopBtn = document.getElementById('rankTopBtn');
   const topGenre = document.getElementById('topGenre');
   const topYear = document.getElementById('topYear');
@@ -1311,6 +1461,60 @@ RANK_TOP_SCRIPT = """
   const rankTopAiBlock = document.getElementById('rankTopAiBlock');
   const rankTopAiLoading = document.getElementById('rankTopAiLoading');
   const rankTopAiText = document.getElementById('rankTopAiText');
+  let lastRankTopData = null;
+
+  function saveRankTopState() {
+    window.movieStateStore.save(RANK_TOP_STATE_KEY, {
+      genre: topGenre.value || '',
+      year: topYear.value || '',
+      mode: topMode.value || 'both',
+      topK: topK.value || '10',
+      data: lastRankTopData,
+      aiText: rankTopAiText.textContent || '',
+      aiVisible: rankTopAiBlock.style.display === 'block' && rankTopAiLoading.style.display !== 'flex',
+    });
+  }
+
+  function renderRankTopResult(data) {
+    const criteria = data.criteria || {};
+    rankTopMeta.textContent = `genre=${criteria.genre || 'any'} | year=${criteria.year ?? 'any'} | content=${criteria.content_mode || 'both'} | candidates=${data.candidate_count || 0}`;
+
+    rankTopRows.innerHTML = '';
+    (data.results || []).forEach((row, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx + 1}</td>
+        <td>${row.title || ''}</td>
+        <td>${row.imdb_id || ''}</td>
+        <td>${row.content_type || ''}</td>
+        <td>${row.year ?? ''}</td>
+        <td>${Number(row.rating || 0).toFixed(1)}</td>
+        <td>${row.popularity ?? ''}</td>
+        <td>${row.genre || ''}</td>
+      `;
+      rankTopRows.appendChild(tr);
+    });
+
+    rankTopResult.style.display = 'block';
+  }
+
+  function restoreRankTopState() {
+    const state = window.movieStateStore.load(RANK_TOP_STATE_KEY);
+    if (!state) return;
+    topGenre.value = state.genre || '';
+    topYear.value = state.year || '';
+    topMode.value = state.mode || 'both';
+    topK.value = state.topK || '10';
+    if (state.data) {
+      lastRankTopData = state.data;
+      renderRankTopResult(state.data);
+      if (state.aiVisible && state.aiText) {
+        rankTopAiBlock.style.display = 'block';
+        rankTopAiLoading.style.display = 'none';
+        rankTopAiText.textContent = state.aiText;
+      }
+    }
+  }
 
   function setRankTopAiLoading() {
     rankTopAiBlock.style.display = 'block';
@@ -1332,6 +1536,7 @@ RANK_TOP_SCRIPT = """
     rankTopAiBlock.style.display = 'block';
     rankTopAiLoading.style.display = 'none';
     rankTopAiText.textContent = text;
+    saveRankTopState();
   }
 
   async function fetchRankTopAiInsight(payload) {
@@ -1469,27 +1674,10 @@ RANK_TOP_SCRIPT = """
         return;
       }
 
-      const criteria = data.criteria || {};
-      rankTopMeta.textContent = `genre=${criteria.genre || 'any'} | year=${criteria.year ?? 'any'} | content=${criteria.content_mode || 'both'} | candidates=${data.candidate_count || 0}`;
-
-      rankTopRows.innerHTML = '';
-      (data.results || []).forEach((row, idx) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${idx + 1}</td>
-          <td>${row.title || ''}</td>
-          <td>${row.imdb_id || ''}</td>
-          <td>${row.content_type || ''}</td>
-          <td>${row.year ?? ''}</td>
-          <td>${Number(row.rating || 0).toFixed(1)}</td>
-          <td>${row.popularity ?? ''}</td>
-          <td>${row.genre || ''}</td>
-        `;
-        rankTopRows.appendChild(tr);
-      });
-
-      rankTopResult.style.display = 'block';
+      lastRankTopData = data;
+      renderRankTopResult(data);
       setRankTopAiLoading();
+      saveRankTopState();
       fetchRankTopAiInsight(requestPayload);
     } catch (err) {
       rankTopResult.style.display = 'none';
@@ -1522,6 +1710,8 @@ RANK_TOP_SCRIPT = """
       hideTopSuggestions(topYearSuggestions);
     }
   });
+
+  restoreRankTopState();
 </script>
 """
 
@@ -1564,6 +1754,7 @@ BASIC_CONTENT = """
 
 BASIC_SCRIPT = """
 <script>
+  const BASIC_STATE_KEY = 'basic.v1';
   const basicRef = document.getElementById('basicRef');
   const basicBtn = document.getElementById('basicBtn');
   const basicLoading = document.getElementById('basicLoading');
@@ -1576,6 +1767,48 @@ BASIC_SCRIPT = """
   const basicAiBlock = document.getElementById('basicAiBlock');
   const basicAiLoading = document.getElementById('basicAiLoading');
   const basicAiText = document.getElementById('basicAiText');
+  let lastBasicData = null;
+
+  function saveBasicState() {
+    window.movieStateStore.save(BASIC_STATE_KEY, {
+      reference: basicRef.value || '',
+      data: lastBasicData,
+      aiText: basicAiText.textContent || '',
+      aiVisible: basicAiBlock.style.display === 'block' && basicAiLoading.style.display !== 'flex',
+    });
+  }
+
+  function renderBasicResult(data) {
+      basicMeta.textContent = `${data.title || 'N/A'} [${data.imdb_id || 'N/A'}]`;
+      basicDescription.textContent = data.summary || '';
+      basicRows.innerHTML = '';
+
+      addBasicRow('Title', data.title || '');
+      addBasicRow('IMDb ID', data.imdb_id || '');
+      addBasicRow('Type', data.content_type || '');
+      addBasicRow('Year', data.year ?? '');
+      addBasicRow('Rating', Number(data.rating || 0).toFixed(1));
+      addBasicRow('Popularity', data.popularity ?? '');
+      addBasicRow('Genre', data.genre || '');
+      addBasicRow('Description', data.description || '');
+
+      basicResult.style.display = 'block';
+  }
+
+  function restoreBasicState() {
+    const state = window.movieStateStore.load(BASIC_STATE_KEY);
+    if (!state) return;
+    basicRef.value = state.reference || '';
+    if (state.data) {
+      lastBasicData = state.data;
+      renderBasicResult(state.data);
+      if (state.aiVisible && state.aiText) {
+        basicAiBlock.style.display = 'block';
+        basicAiLoading.style.display = 'none';
+        basicAiText.textContent = state.aiText;
+      }
+    }
+  }
 
   function setBasicAiLoading() {
     basicAiBlock.style.display = 'block';
@@ -1597,6 +1830,7 @@ BASIC_SCRIPT = """
     basicAiBlock.style.display = 'block';
     basicAiLoading.style.display = 'none';
     basicAiText.textContent = text;
+    saveBasicState();
   }
 
   async function fetchBasicAiInsight(reference) {
@@ -1697,21 +1931,10 @@ BASIC_SCRIPT = """
         return;
       }
 
-      basicMeta.textContent = `${data.title || 'N/A'} [${data.imdb_id || 'N/A'}]`;
-      basicDescription.textContent = data.summary || '';
-      basicRows.innerHTML = '';
-
-      addBasicRow('Title', data.title || '');
-      addBasicRow('IMDb ID', data.imdb_id || '');
-      addBasicRow('Type', data.content_type || '');
-      addBasicRow('Year', data.year ?? '');
-      addBasicRow('Rating', Number(data.rating || 0).toFixed(1));
-      addBasicRow('Popularity', data.popularity ?? '');
-      addBasicRow('Genre', data.genre || '');
-      addBasicRow('Description', data.description || '');
-
-      basicResult.style.display = 'block';
+      lastBasicData = data;
+      renderBasicResult(data);
       setBasicAiLoading();
+      saveBasicState();
       fetchBasicAiInsight(reference);
     } catch (err) {
       basicResult.style.display = 'none';
@@ -1741,6 +1964,8 @@ BASIC_SCRIPT = """
       hideBasicSuggestions();
     }
   });
+
+  restoreBasicState();
 </script>
 """
 
