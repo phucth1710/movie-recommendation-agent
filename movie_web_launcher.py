@@ -450,7 +450,7 @@ SIMILAR_CONTENT = """
             <th>Genre</th>
             <th>Similarity</th>
             <th>Composite</th>
-            <th>AI Insight</th>
+            <th>More Detail</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -580,7 +580,7 @@ SIMILAR_SCRIPT = """
       const isLoading = !!similarAiLoading[imdbId];
       const hasInsight = !!similarAiCache[imdbId];
       const isExpanded = !!similarAiExpanded[imdbId];
-      const buttonLabel = isLoading ? 'Loading...' : (isExpanded ? 'Hide insight' : 'AI insight');
+      const buttonLabel = isLoading ? 'Loading...' : (isExpanded ? 'Hide detail' : 'More detail');
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -600,7 +600,7 @@ SIMILAR_SCRIPT = """
 
       if (isExpanded && hasInsight) {
         const detailTr = document.createElement('tr');
-        detailTr.innerHTML = `<td colspan="11" style="background:#f8fbff; color:#334155; line-height:1.45;"><strong>AI Insight:</strong> ${similarAiCache[imdbId]}</td>`;
+        detailTr.innerHTML = `<td colspan="11" style="background:#f8fbff; color:#334155; line-height:1.45;"><strong>More Detail:</strong> ${similarAiCache[imdbId]}</td>`;
         rows.appendChild(detailTr);
       }
     });
@@ -634,12 +634,12 @@ SIMILAR_SCRIPT = """
           });
           const data = await res.json();
           if (!res.ok || data.error) {
-            similarAiCache[imdbId] = 'AI insight is currently unavailable for this row.';
+            similarAiCache[imdbId] = 'More detail is currently unavailable for this row.';
           } else {
-            similarAiCache[imdbId] = data.insight || 'No AI insight returned.';
+            similarAiCache[imdbId] = data.insight || 'No additional detail returned.';
           }
         } catch (err) {
-          similarAiCache[imdbId] = 'AI insight is currently unavailable for this row.';
+          similarAiCache[imdbId] = 'More detail is currently unavailable for this row.';
         } finally {
           similarAiLoading[imdbId] = false;
           similarAiExpanded[imdbId] = true;
@@ -830,15 +830,17 @@ COMPARE_CONTENT = """
       </table>
     </div>
     <div id="compareAiBlock" style="display:none; padding:14px; border-top:1px solid #e7edf7; background:#fbfdff;">
-      <h3 style="margin:0 0 10px; font-size:16px; color:#0f2855;">AI Comparison Insight</h3>
+      <button id="compareAiBtn" class="btn" type="button" style="margin:0 0 10px;">Load AI Comparison Insight</button>
       <div id="aiInsightLoading" style="display:none; align-items:center; gap:8px; color:#0f2855; margin:0 0 8px;">
         <span class="spinner" aria-hidden="true"></span>
         <span>Generating AI insight...</span>
       </div>
-      <p id="aiGenreTone" style="margin:0 0 8px; color:#334155;"></p>
-      <p id="aiThemes" style="margin:0 0 8px; color:#334155;"></p>
-      <p id="aiReception" style="margin:0 0 8px; color:#334155;"></p>
-      <p id="aiTaste" style="margin:0; color:#0f2855; font-weight:600;"></p>
+      <div id="compareAiContent" style="display:none;">
+        <p id="aiGenreTone" style="margin:0 0 8px; color:#334155;"></p>
+        <p id="aiThemes" style="margin:0 0 8px; color:#334155;"></p>
+        <p id="aiReception" style="margin:0 0 8px; color:#334155;"></p>
+        <p id="aiTaste" style="margin:0; color:#0f2855; font-weight:600;"></p>
+      </div>
     </div>
   </div>
 </section>
@@ -866,10 +868,19 @@ COMPARE_SCRIPT = """
   const aiReception = document.getElementById('aiReception');
   const aiTaste = document.getElementById('aiTaste');
   const aiInsightLoading = document.getElementById('aiInsightLoading');
+  const compareAiBtn = document.getElementById('compareAiBtn');
+  const compareAiContent = document.getElementById('compareAiContent');
   let lastCompareData = null;
+
+  function setCompareAiButtonLabel(isHideAction) {
+    compareAiBtn.textContent = isHideAction ? 'Hide AI Comparison Insight' : 'Load AI Comparison Insight';
+  }
 
   function setAiInsightLoading() {
     aiInsightLoading.style.display = 'flex';
+    compareAiContent.style.display = 'none';
+    setCompareAiButtonLabel(false);
+    compareAiBtn.disabled = true;
     aiGenreTone.textContent = '';
     aiThemes.textContent = '';
     aiReception.textContent = '';
@@ -877,8 +888,11 @@ COMPARE_SCRIPT = """
     compareAiBlock.style.display = 'block';
   }
 
-  function hideAiInsight() {
+  function resetAiInsight() {
     compareAiBlock.style.display = 'none';
+    compareAiContent.style.display = 'none';
+    setCompareAiButtonLabel(false);
+    compareAiBtn.disabled = false;
     aiInsightLoading.style.display = 'none';
     aiGenreTone.textContent = '';
     aiThemes.textContent = '';
@@ -886,12 +900,26 @@ COMPARE_SCRIPT = """
     aiTaste.textContent = '';
   }
 
+  function hideAiInsightContent() {
+    compareAiContent.style.display = 'none';
+    aiInsightLoading.style.display = 'none';
+    setCompareAiButtonLabel(false);
+    saveCompareState();
+  }
+
+  function hasCompareAiCache() {
+    return Boolean(aiGenreTone.textContent || aiThemes.textContent || aiReception.textContent || aiTaste.textContent);
+  }
+
   function renderAiInsight(aiInsight) {
     if (!aiInsight) {
-      hideAiInsight();
+      hideAiInsightContent();
       return;
     }
     aiInsightLoading.style.display = 'none';
+    compareAiContent.style.display = 'block';
+    setCompareAiButtonLabel(true);
+    compareAiBtn.disabled = false;
     aiGenreTone.textContent = `Genre and Tone: ${aiInsight.genre_and_tone || ''}`;
     aiThemes.textContent = `Main Themes: ${aiInsight.main_themes || ''}`;
     aiReception.textContent = `Critical Reception: ${aiInsight.critical_reception || ''}`;
@@ -910,7 +938,7 @@ COMPARE_SCRIPT = """
         themes: aiThemes.textContent || '',
         reception: aiReception.textContent || '',
         taste: aiTaste.textContent || '',
-        visible: compareAiBlock.style.display === 'block' && aiInsightLoading.style.display !== 'flex',
+        visible: compareAiContent.style.display === 'block' && aiInsightLoading.style.display !== 'flex',
       },
     });
   }
@@ -923,13 +951,18 @@ COMPARE_SCRIPT = """
     if (state.data) {
       renderCompareResult(state.data);
       lastCompareData = state.data;
-      if (state.ai && state.ai.visible) {
-        aiInsightLoading.style.display = 'none';
+      showAiInsightPrompt();
+      if (state.ai) {
         aiGenreTone.textContent = state.ai.genreTone || '';
         aiThemes.textContent = state.ai.themes || '';
         aiReception.textContent = state.ai.reception || '';
         aiTaste.textContent = state.ai.taste || '';
-        compareAiBlock.style.display = 'block';
+        if (state.ai.visible && hasCompareAiCache()) {
+          aiInsightLoading.style.display = 'none';
+          compareAiBlock.style.display = 'block';
+          compareAiContent.style.display = 'block';
+          setCompareAiButtonLabel(true);
+        }
       }
     }
   }
@@ -968,13 +1001,33 @@ COMPARE_SCRIPT = """
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        hideAiInsight();
+        aiInsightLoading.style.display = 'none';
+        compareAiBtn.disabled = false;
+        compareAiContent.style.display = 'block';
+        setCompareAiButtonLabel(false);
+        aiGenreTone.textContent = 'AI insight is currently unavailable.';
         return;
       }
       renderAiInsight(data.ai_insight || null);
     } catch (err) {
-      hideAiInsight();
+      aiInsightLoading.style.display = 'none';
+      compareAiBtn.disabled = false;
+      compareAiContent.style.display = 'block';
+      setCompareAiButtonLabel(false);
+      aiGenreTone.textContent = 'AI insight is currently unavailable.';
     }
+  }
+
+  function showAiInsightPrompt() {
+    compareAiBlock.style.display = 'block';
+    compareAiContent.style.display = 'none';
+    setCompareAiButtonLabel(false);
+    compareAiBtn.disabled = false;
+    aiInsightLoading.style.display = 'none';
+    aiGenreTone.textContent = '';
+    aiThemes.textContent = '';
+    aiReception.textContent = '';
+    aiTaste.textContent = '';
   }
 
   function hideMovieSuggestions(dropdown) {
@@ -1058,12 +1111,11 @@ COMPARE_SCRIPT = """
       }
       lastCompareData = data;
       renderCompareResult(data);
-      setAiInsightLoading();
+      showAiInsightPrompt();
       saveCompareState();
-      fetchAiInsight(first, second);
     } catch (err) {
       compareResult.style.display = 'none';
-      hideAiInsight();
+      resetAiInsight();
       showCompareError('Network error while comparing movies.');
     } finally {
       setCompareLoading(false);
@@ -1071,6 +1123,27 @@ COMPARE_SCRIPT = """
   }
 
   compareBtn.addEventListener('click', runCompare);
+  compareAiBtn.addEventListener('click', () => {
+    if (compareAiContent.style.display === 'block' && aiInsightLoading.style.display !== 'flex') {
+      hideAiInsightContent();
+      return;
+    }
+
+    if (hasCompareAiCache()) {
+      compareAiBlock.style.display = 'block';
+      compareAiContent.style.display = 'block';
+      aiInsightLoading.style.display = 'none';
+      setCompareAiButtonLabel(true);
+      saveCompareState();
+      return;
+    }
+
+    const first = firstRef.value.trim();
+    const second = secondRef.value.trim();
+    if (!first || !second) return;
+    setAiInsightLoading();
+    fetchAiInsight(first, second);
+  });
 
   let firstTimer = null;
   let secondTimer = null;
@@ -1148,7 +1221,7 @@ RANK_SET_CONTENT = """
       </table>
     </div>
     <div id="rankSetAiBlock" style="display:none; padding:14px; border-top:1px solid #e7edf7; background:#fbfdff;">
-      <h3 style="margin:0 0 10px; font-size:16px; color:#0f2855;">AI Ranking Insight</h3>
+      <button id="rankSetAiBtn" class="btn" type="button" style="margin:0 0 10px;">Load AI Ranking Insight</button>
       <div id="rankSetAiLoading" style="display:none; align-items:center; gap:8px; color:#0f2855; margin:0 0 8px;">
         <span class="spinner" aria-hidden="true"></span>
         <span>Generating AI insight...</span>
@@ -1174,15 +1247,21 @@ RANK_SET_SCRIPT = """
   const rankSetAiBlock = document.getElementById('rankSetAiBlock');
   const rankSetAiLoading = document.getElementById('rankSetAiLoading');
   const rankSetAiText = document.getElementById('rankSetAiText');
+  const rankSetAiBtn = document.getElementById('rankSetAiBtn');
   let lastRankSetData = null;
+  let lastRankSetReferences = [];
 
   function saveRankSetState() {
     window.movieStateStore.save(RANK_SET_STATE_KEY, {
       input: setInput.value || '',
       data: lastRankSetData,
       aiText: rankSetAiText.textContent || '',
-      aiVisible: rankSetAiBlock.style.display === 'block' && rankSetAiLoading.style.display !== 'flex',
+      aiVisible: rankSetAiText.style.display !== 'none' && rankSetAiLoading.style.display !== 'flex',
     });
+  }
+
+  function setRankSetAiButtonLabel(isHideAction) {
+    rankSetAiBtn.textContent = isHideAction ? 'Hide AI Ranking Insight' : 'Load AI Ranking Insight';
   }
 
   function renderRankSetResult(data) {
@@ -1215,11 +1294,17 @@ RANK_SET_SCRIPT = """
     setInput.value = state.input || '';
     if (state.data) {
       lastRankSetData = state.data;
+      lastRankSetReferences = parseReferences(state.input || '');
       renderRankSetResult(state.data);
+      showRankSetAiPrompt();
+      if (state.aiText) {
+        rankSetAiText.textContent = state.aiText;
+      }
       if (state.aiVisible && state.aiText) {
         rankSetAiBlock.style.display = 'block';
         rankSetAiLoading.style.display = 'none';
-        rankSetAiText.textContent = state.aiText;
+        rankSetAiText.style.display = 'block';
+        setRankSetAiButtonLabel(true);
       }
     }
   }
@@ -1227,24 +1312,53 @@ RANK_SET_SCRIPT = """
   function setRankSetAiLoading() {
     rankSetAiBlock.style.display = 'block';
     rankSetAiLoading.style.display = 'flex';
-    rankSetAiText.textContent = '';
+    rankSetAiBtn.disabled = true;
+    rankSetAiText.style.display = 'none';
   }
 
-  function hideRankSetAi() {
+  function resetRankSetAi() {
     rankSetAiBlock.style.display = 'none';
     rankSetAiLoading.style.display = 'none';
+    rankSetAiBtn.disabled = false;
     rankSetAiText.textContent = '';
+    rankSetAiText.style.display = 'none';
+    setRankSetAiButtonLabel(false);
+  }
+
+  function hideRankSetAiContent() {
+    rankSetAiBlock.style.display = 'block';
+    rankSetAiLoading.style.display = 'none';
+    rankSetAiBtn.disabled = false;
+    rankSetAiText.style.display = 'none';
+    setRankSetAiButtonLabel(false);
+    saveRankSetState();
+  }
+
+  function hasRankSetAiCache() {
+    return Boolean(rankSetAiText.textContent);
   }
 
   function renderRankSetAi(text) {
     if (!text) {
-      hideRankSetAi();
+      hideRankSetAiContent();
       return;
     }
     rankSetAiBlock.style.display = 'block';
     rankSetAiLoading.style.display = 'none';
+    rankSetAiBtn.disabled = false;
     rankSetAiText.textContent = text;
+    rankSetAiText.style.display = 'block';
+    setRankSetAiButtonLabel(true);
     saveRankSetState();
+  }
+
+  function showRankSetAiPrompt() {
+    rankSetAiBlock.style.display = 'block';
+    rankSetAiLoading.style.display = 'none';
+    rankSetAiBtn.disabled = false;
+    rankSetAiText.textContent = '';
+    rankSetAiText.style.display = 'none';
+    setRankSetAiButtonLabel(false);
   }
 
   async function fetchRankSetAiInsight(references) {
@@ -1256,12 +1370,22 @@ RANK_SET_SCRIPT = """
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        hideRankSetAi();
+        rankSetAiLoading.style.display = 'none';
+        rankSetAiBtn.disabled = false;
+        rankSetAiText.style.display = 'block';
+        setRankSetAiButtonLabel(false);
+        rankSetAiText.textContent = 'AI insight is currently unavailable.';
+        saveRankSetState();
         return;
       }
       renderRankSetAi(data.insight || '');
     } catch (err) {
-      hideRankSetAi();
+      rankSetAiLoading.style.display = 'none';
+      rankSetAiBtn.disabled = false;
+      rankSetAiText.style.display = 'block';
+      setRankSetAiButtonLabel(false);
+      rankSetAiText.textContent = 'AI insight is currently unavailable.';
+      saveRankSetState();
     }
   }
 
@@ -1356,13 +1480,13 @@ RANK_SET_SCRIPT = """
       }
 
       lastRankSetData = data;
+      lastRankSetReferences = references;
       renderRankSetResult(data);
-      setRankSetAiLoading();
+      showRankSetAiPrompt();
       saveRankSetState();
-      fetchRankSetAiInsight(references);
     } catch (err) {
       rankSetResult.style.display = 'none';
-      hideRankSetAi();
+      resetRankSetAi();
       showRankSetError('Network error while ranking set.');
     } finally {
       setRankSetLoading(false);
@@ -1376,6 +1500,26 @@ RANK_SET_SCRIPT = """
   });
 
   rankSetBtn.addEventListener('click', runRankSet);
+  rankSetAiBtn.addEventListener('click', () => {
+    if (rankSetAiText.style.display === 'block' && rankSetAiLoading.style.display !== 'flex') {
+      hideRankSetAiContent();
+      return;
+    }
+
+    if (hasRankSetAiCache()) {
+      rankSetAiBlock.style.display = 'block';
+      rankSetAiLoading.style.display = 'none';
+      rankSetAiText.style.display = 'block';
+      rankSetAiBtn.disabled = false;
+      setRankSetAiButtonLabel(true);
+      saveRankSetState();
+      return;
+    }
+
+    if (!lastRankSetReferences.length) return;
+    setRankSetAiLoading();
+    fetchRankSetAiInsight(lastRankSetReferences);
+  });
 
   document.addEventListener('click', (e) => {
     if (!setSuggestions.contains(e.target) && e.target !== setInput) {
@@ -1431,7 +1575,7 @@ RANK_TOP_CONTENT = """
       </table>
     </div>
     <div id="rankTopAiBlock" style="display:none; padding:14px; border-top:1px solid #e7edf7; background:#fbfdff;">
-      <h3 style="margin:0 0 10px; font-size:16px; color:#0f2855;">AI Ranking Insight</h3>
+      <button id="rankTopAiBtn" class="btn" type="button" style="margin:0 0 10px;">Load AI Ranking Insight</button>
       <div id="rankTopAiLoading" style="display:none; align-items:center; gap:8px; color:#0f2855; margin:0 0 8px;">
         <span class="spinner" aria-hidden="true"></span>
         <span>Generating AI insight...</span>
@@ -1461,7 +1605,9 @@ RANK_TOP_SCRIPT = """
   const rankTopAiBlock = document.getElementById('rankTopAiBlock');
   const rankTopAiLoading = document.getElementById('rankTopAiLoading');
   const rankTopAiText = document.getElementById('rankTopAiText');
+  const rankTopAiBtn = document.getElementById('rankTopAiBtn');
   let lastRankTopData = null;
+  let lastRankTopPayload = null;
 
   function saveRankTopState() {
     window.movieStateStore.save(RANK_TOP_STATE_KEY, {
@@ -1471,8 +1617,12 @@ RANK_TOP_SCRIPT = """
       topK: topK.value || '10',
       data: lastRankTopData,
       aiText: rankTopAiText.textContent || '',
-      aiVisible: rankTopAiBlock.style.display === 'block' && rankTopAiLoading.style.display !== 'flex',
+      aiVisible: rankTopAiText.style.display !== 'none' && rankTopAiLoading.style.display !== 'flex',
     });
+  }
+
+  function setRankTopAiButtonLabel(isHideAction) {
+    rankTopAiBtn.textContent = isHideAction ? 'Hide AI Ranking Insight' : 'Load AI Ranking Insight';
   }
 
   function renderRankTopResult(data) {
@@ -1507,11 +1657,23 @@ RANK_TOP_SCRIPT = """
     topK.value = state.topK || '10';
     if (state.data) {
       lastRankTopData = state.data;
+      const criteria = state.data.criteria || {};
+      lastRankTopPayload = {
+        genre: criteria.genre || '',
+        year: Number(criteria.year || 0) || 0,
+        content_mode: criteria.content_mode || state.mode || 'both',
+        top_k: Number(state.topK || 10) || 10,
+      };
       renderRankTopResult(state.data);
+      showRankTopAiPrompt();
+      if (state.aiText) {
+        rankTopAiText.textContent = state.aiText;
+      }
       if (state.aiVisible && state.aiText) {
         rankTopAiBlock.style.display = 'block';
         rankTopAiLoading.style.display = 'none';
-        rankTopAiText.textContent = state.aiText;
+        rankTopAiText.style.display = 'block';
+        setRankTopAiButtonLabel(true);
       }
     }
   }
@@ -1519,24 +1681,53 @@ RANK_TOP_SCRIPT = """
   function setRankTopAiLoading() {
     rankTopAiBlock.style.display = 'block';
     rankTopAiLoading.style.display = 'flex';
-    rankTopAiText.textContent = '';
+    rankTopAiBtn.disabled = true;
+    rankTopAiText.style.display = 'none';
   }
 
-  function hideRankTopAi() {
+  function resetRankTopAi() {
     rankTopAiBlock.style.display = 'none';
     rankTopAiLoading.style.display = 'none';
+    rankTopAiBtn.disabled = false;
     rankTopAiText.textContent = '';
+    rankTopAiText.style.display = 'none';
+    setRankTopAiButtonLabel(false);
+  }
+
+  function hideRankTopAiContent() {
+    rankTopAiBlock.style.display = 'block';
+    rankTopAiLoading.style.display = 'none';
+    rankTopAiBtn.disabled = false;
+    rankTopAiText.style.display = 'none';
+    setRankTopAiButtonLabel(false);
+    saveRankTopState();
+  }
+
+  function hasRankTopAiCache() {
+    return Boolean(rankTopAiText.textContent);
   }
 
   function renderRankTopAi(text) {
     if (!text) {
-      hideRankTopAi();
+      hideRankTopAiContent();
       return;
     }
     rankTopAiBlock.style.display = 'block';
     rankTopAiLoading.style.display = 'none';
+    rankTopAiBtn.disabled = false;
     rankTopAiText.textContent = text;
+    rankTopAiText.style.display = 'block';
+    setRankTopAiButtonLabel(true);
     saveRankTopState();
+  }
+
+  function showRankTopAiPrompt() {
+    rankTopAiBlock.style.display = 'block';
+    rankTopAiLoading.style.display = 'none';
+    rankTopAiBtn.disabled = false;
+    rankTopAiText.textContent = '';
+    rankTopAiText.style.display = 'none';
+    setRankTopAiButtonLabel(false);
   }
 
   async function fetchRankTopAiInsight(payload) {
@@ -1548,12 +1739,22 @@ RANK_TOP_SCRIPT = """
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        hideRankTopAi();
+        rankTopAiLoading.style.display = 'none';
+        rankTopAiBtn.disabled = false;
+        rankTopAiText.style.display = 'block';
+        setRankTopAiButtonLabel(false);
+        rankTopAiText.textContent = 'AI insight is currently unavailable.';
+        saveRankTopState();
         return;
       }
       renderRankTopAi(data.insight || '');
     } catch (err) {
-      hideRankTopAi();
+      rankTopAiLoading.style.display = 'none';
+      rankTopAiBtn.disabled = false;
+      rankTopAiText.style.display = 'block';
+      setRankTopAiButtonLabel(false);
+      rankTopAiText.textContent = 'AI insight is currently unavailable.';
+      saveRankTopState();
     }
   }
 
@@ -1675,13 +1876,13 @@ RANK_TOP_SCRIPT = """
       }
 
       lastRankTopData = data;
+      lastRankTopPayload = requestPayload;
       renderRankTopResult(data);
-      setRankTopAiLoading();
+      showRankTopAiPrompt();
       saveRankTopState();
-      fetchRankTopAiInsight(requestPayload);
     } catch (err) {
       rankTopResult.style.display = 'none';
-      hideRankTopAi();
+      resetRankTopAi();
       showRankTopError('Network error while ranking top movies.');
     } finally {
       setRankTopLoading(false);
@@ -1689,6 +1890,26 @@ RANK_TOP_SCRIPT = """
   }
 
   rankTopBtn.addEventListener('click', runRankTop);
+  rankTopAiBtn.addEventListener('click', () => {
+    if (rankTopAiText.style.display === 'block' && rankTopAiLoading.style.display !== 'flex') {
+      hideRankTopAiContent();
+      return;
+    }
+
+    if (hasRankTopAiCache()) {
+      rankTopAiBlock.style.display = 'block';
+      rankTopAiLoading.style.display = 'none';
+      rankTopAiText.style.display = 'block';
+      rankTopAiBtn.disabled = false;
+      setRankTopAiButtonLabel(true);
+      saveRankTopState();
+      return;
+    }
+
+    if (!lastRankTopPayload) return;
+    setRankTopAiLoading();
+    fetchRankTopAiInsight(lastRankTopPayload);
+  });
 
   let topGenreTimer = null;
   let topYearTimer = null;
@@ -1740,7 +1961,7 @@ BASIC_CONTENT = """
       </table>
     </div>
     <div id="basicAiBlock" style="display:none; padding:14px; border-top:1px solid #e7edf7; background:#fbfdff;">
-      <h3 style="margin:0 0 10px; font-size:16px; color:#0f2855;">AI Description Insight</h3>
+      <button id="basicAiBtn" class="btn" type="button" style="margin:0 0 10px;">Load AI Description Insight</button>
       <div id="basicAiLoading" style="display:none; align-items:center; gap:8px; color:#0f2855; margin:0 0 8px;">
         <span class="spinner" aria-hidden="true"></span>
         <span>Generating AI insight...</span>
@@ -1767,6 +1988,7 @@ BASIC_SCRIPT = """
   const basicAiBlock = document.getElementById('basicAiBlock');
   const basicAiLoading = document.getElementById('basicAiLoading');
   const basicAiText = document.getElementById('basicAiText');
+  const basicAiBtn = document.getElementById('basicAiBtn');
   let lastBasicData = null;
 
   function saveBasicState() {
@@ -1774,8 +1996,12 @@ BASIC_SCRIPT = """
       reference: basicRef.value || '',
       data: lastBasicData,
       aiText: basicAiText.textContent || '',
-      aiVisible: basicAiBlock.style.display === 'block' && basicAiLoading.style.display !== 'flex',
+      aiVisible: basicAiText.style.display !== 'none' && basicAiLoading.style.display !== 'flex',
     });
+  }
+
+  function setBasicAiButtonLabel(isHideAction) {
+    basicAiBtn.textContent = isHideAction ? 'Hide AI Description Insight' : 'Load AI Description Insight';
   }
 
   function renderBasicResult(data) {
@@ -1802,10 +2028,15 @@ BASIC_SCRIPT = """
     if (state.data) {
       lastBasicData = state.data;
       renderBasicResult(state.data);
+      showBasicAiPrompt();
+      if (state.aiText) {
+        basicAiText.textContent = state.aiText;
+      }
       if (state.aiVisible && state.aiText) {
         basicAiBlock.style.display = 'block';
         basicAiLoading.style.display = 'none';
-        basicAiText.textContent = state.aiText;
+        basicAiText.style.display = 'block';
+        setBasicAiButtonLabel(true);
       }
     }
   }
@@ -1813,24 +2044,53 @@ BASIC_SCRIPT = """
   function setBasicAiLoading() {
     basicAiBlock.style.display = 'block';
     basicAiLoading.style.display = 'flex';
-    basicAiText.textContent = '';
+    basicAiBtn.disabled = true;
+    basicAiText.style.display = 'none';
   }
 
-  function hideBasicAi() {
+  function resetBasicAi() {
     basicAiBlock.style.display = 'none';
     basicAiLoading.style.display = 'none';
+    basicAiBtn.disabled = false;
     basicAiText.textContent = '';
+    basicAiText.style.display = 'none';
+    setBasicAiButtonLabel(false);
+  }
+
+  function hideBasicAiContent() {
+    basicAiBlock.style.display = 'block';
+    basicAiLoading.style.display = 'none';
+    basicAiBtn.disabled = false;
+    basicAiText.style.display = 'none';
+    setBasicAiButtonLabel(false);
+    saveBasicState();
+  }
+
+  function hasBasicAiCache() {
+    return Boolean(basicAiText.textContent);
   }
 
   function renderBasicAi(text) {
     if (!text) {
-      hideBasicAi();
+      hideBasicAiContent();
       return;
     }
     basicAiBlock.style.display = 'block';
     basicAiLoading.style.display = 'none';
+    basicAiBtn.disabled = false;
     basicAiText.textContent = text;
+    basicAiText.style.display = 'block';
+    setBasicAiButtonLabel(true);
     saveBasicState();
+  }
+
+  function showBasicAiPrompt() {
+    basicAiBlock.style.display = 'block';
+    basicAiLoading.style.display = 'none';
+    basicAiBtn.disabled = false;
+    basicAiText.textContent = '';
+    basicAiText.style.display = 'none';
+    setBasicAiButtonLabel(false);
   }
 
   async function fetchBasicAiInsight(reference) {
@@ -1842,12 +2102,22 @@ BASIC_SCRIPT = """
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        hideBasicAi();
+        basicAiLoading.style.display = 'none';
+        basicAiBtn.disabled = false;
+        basicAiText.style.display = 'block';
+        setBasicAiButtonLabel(false);
+        basicAiText.textContent = 'AI insight is currently unavailable.';
+        saveBasicState();
         return;
       }
       renderBasicAi(data.insight || '');
     } catch (err) {
-      hideBasicAi();
+      basicAiLoading.style.display = 'none';
+      basicAiBtn.disabled = false;
+      basicAiText.style.display = 'block';
+      setBasicAiButtonLabel(false);
+      basicAiText.textContent = 'AI insight is currently unavailable.';
+      saveBasicState();
     }
   }
 
@@ -1933,12 +2203,11 @@ BASIC_SCRIPT = """
 
       lastBasicData = data;
       renderBasicResult(data);
-      setBasicAiLoading();
+      showBasicAiPrompt();
       saveBasicState();
-      fetchBasicAiInsight(reference);
     } catch (err) {
       basicResult.style.display = 'none';
-      hideBasicAi();
+      resetBasicAi();
       showBasicError('Network error while loading description.');
     } finally {
       setBasicLoading(false);
@@ -1946,6 +2215,27 @@ BASIC_SCRIPT = """
   }
 
   basicBtn.addEventListener('click', runBasicLookup);
+  basicAiBtn.addEventListener('click', () => {
+    if (basicAiText.style.display === 'block' && basicAiLoading.style.display !== 'flex') {
+      hideBasicAiContent();
+      return;
+    }
+
+    if (hasBasicAiCache()) {
+      basicAiBlock.style.display = 'block';
+      basicAiLoading.style.display = 'none';
+      basicAiText.style.display = 'block';
+      basicAiBtn.disabled = false;
+      setBasicAiButtonLabel(true);
+      saveBasicState();
+      return;
+    }
+
+    const reference = basicRef.value.trim();
+    if (!reference) return;
+    setBasicAiLoading();
+    fetchBasicAiInsight(reference);
+  });
   let basicTimer = null;
   basicRef.addEventListener('input', () => {
     clearTimeout(basicTimer);
