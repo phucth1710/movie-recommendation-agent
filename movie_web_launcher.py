@@ -257,6 +257,17 @@ PAGE_SHELL = """
       font-weight: 700;
     }
 
+    th[data-sort-key] {
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+
+    th[data-sort-key]:hover {
+      background: #dbeafe;
+      color: #0b57d0;
+    }
+
     .hint {
       margin: 10px 0 0;
       color: #475569;
@@ -334,11 +345,11 @@ PAGE_SHELL = """
     <div class="top-nav-inner">
       <a class="nav-brand" href="/">Movie Search</a>
       <a class="nav-link {% if active == 'home' %}active{% endif %}" href="/">Movie Search</a>
+      <a class="nav-link {% if active == 'basic' %}active{% endif %}" href="/basic-description">Basic Movie Description</a>
       <a class="nav-link {% if active == 'similar' %}active{% endif %}" href="/similar">Finding Similar Movie</a>
       <a class="nav-link {% if active == 'compare' %}active{% endif %}" href="/compare">Compare Two Movies</a>
       <a class="nav-link {% if active == 'rank_set' %}active{% endif %}" href="/rank-set">Ranking a Set of Movies</a>
       <a class="nav-link {% if active == 'rank_top' %}active{% endif %}" href="/rank-top">Ranking Top Movies</a>
-      <a class="nav-link {% if active == 'basic' %}active{% endif %}" href="/basic-description">Basic Movie Description</a>
     </div>
   </nav>
   <main class="wrap">
@@ -424,6 +435,10 @@ HOME_CONTENT = """
   </p>
 
   <div class="hub-grid">
+    <a class="hub-item" href="/basic-description">
+      <h3>Basic Movie Description</h3>
+      <p>Retrieve basic profile information for a title including metadata, genres, and a short summary.</p>
+    </a>
     <a class="hub-item" href="/similar">
       <h3>Finding Similar Movie</h3>
       <p>Find recommendations that are close to a reference title by similarity, rating, and popularity.</p>
@@ -439,10 +454,6 @@ HOME_CONTENT = """
     <a class="hub-item" href="/rank-top">
       <h3>Ranking Top Movies</h3>
       <p>Get top entries by filter criteria such as genre, year, and content mode (movie/show/both).</p>
-    </a>
-    <a class="hub-item" href="/basic-description">
-      <h3>Basic Movie Description</h3>
-      <p>Retrieve basic profile information for a title including metadata, genres, and a short summary.</p>
     </a>
   </div>
 </section>
