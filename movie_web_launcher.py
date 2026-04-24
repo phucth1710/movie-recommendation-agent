@@ -347,16 +347,40 @@ PAGE_SHELL = """
   <script>
     (function setupMovieStateStore() {
       const PREFIX = 'movie-web-state:';
+
+      function clearByPrefix(storage) {
+        const toRemove = [];
+        for (let i = 0; i < storage.length; i += 1) {
+          const key = storage.key(i);
+          if (key && key.startsWith(PREFIX)) {
+            toRemove.push(key);
+          }
+        }
+        toRemove.forEach((key) => {
+          try {
+            storage.removeItem(key);
+          } catch (err) {
+          }
+        });
+      }
+
+      // Remove any older cross-session data so each new login/session starts fresh.
+      clearByPrefix(localStorage);
+
+      function clearSessionState() {
+        clearByPrefix(sessionStorage);
+      }
+
       window.movieStateStore = {
         save: function (key, value) {
           try {
-            localStorage.setItem(PREFIX + key, JSON.stringify(value));
+            sessionStorage.setItem(PREFIX + key, JSON.stringify(value));
           } catch (err) {
           }
         },
         load: function (key) {
           try {
-            const raw = localStorage.getItem(PREFIX + key);
+            const raw = sessionStorage.getItem(PREFIX + key);
             return raw ? JSON.parse(raw) : null;
           } catch (err) {
             return null;
@@ -364,11 +388,20 @@ PAGE_SHELL = """
         },
         remove: function (key) {
           try {
-            localStorage.removeItem(PREFIX + key);
+            sessionStorage.removeItem(PREFIX + key);
+          } catch (err) {
+          }
+        },
+        clearAll: function () {
+          try {
+            clearSessionState();
           } catch (err) {
           }
         }
       };
+
+      // Optional integration point: dispatch this event from logout flow to clear session state.
+      window.addEventListener('movie-user-logout', clearSessionState);
     })();
   </script>
   {{ script | safe }}
