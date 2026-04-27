@@ -1332,12 +1332,12 @@ RANK_SET_CONTENT = """
         <thead>
           <tr>
             <th>Rank</th>
-            <th>Title</th>
+            <th id="rankSetThTitle" data-sort-key="title">Title</th>
             <th>IMDb ID</th>
             <th>Type</th>
             <th>Year</th>
-            <th>Rating</th>
-            <th>Popularity</th>
+            <th id="rankSetThRating" data-sort-key="rating">Rating</th>
+            <th id="rankSetThPopularity" data-sort-key="popularity">Popularity</th>
             <th>Length</th>
             <th>Genre</th>
           </tr>
@@ -1368,18 +1368,34 @@ RANK_SET_SCRIPT = """
   const rankSetResult = document.getElementById('rankSetResult');
   const rankSetMeta = document.getElementById('rankSetMeta');
   const rankSetRows = document.getElementById('rankSetRows');
+  const rankSetSortHeaders = [
+    document.getElementById('rankSetThTitle'),
+    document.getElementById('rankSetThRating'),
+    document.getElementById('rankSetThPopularity')
+  ];
   const setSuggestions = document.getElementById('setSuggestions');
   const rankSetAiBlock = document.getElementById('rankSetAiBlock');
   const rankSetAiLoading = document.getElementById('rankSetAiLoading');
   const rankSetAiText = document.getElementById('rankSetAiText');
   const rankSetAiBtn = document.getElementById('rankSetAiBtn');
+  const RANK_SET_SORT_CYCLES = {
+    title: ['asc', 'default'],
+    rating: ['desc', 'asc', 'default'],
+    popularity: ['desc', 'asc', 'default']
+  };
   let lastRankSetData = null;
   let lastRankSetReferences = [];
+  let rankSetDefaultRowsData = [];
+  let rankSetCurrentRowsData = [];
+  let rankSetActiveSort = { key: null, stateIndex: 0 };
 
   function saveRankSetState() {
     window.movieStateStore.save(RANK_SET_STATE_KEY, {
       input: setInput.value || '',
       data: lastRankSetData,
+      defaultRowsData: rankSetDefaultRowsData,
+      currentRowsData: rankSetCurrentRowsData,
+      activeSort: rankSetActiveSort,
       aiText: rankSetAiText.textContent || '',
       aiVisible: rankSetAiText.style.display !== 'none' && rankSetAiLoading.style.display !== 'flex',
     });
@@ -1389,12 +1405,56 @@ RANK_SET_SCRIPT = """
     rankSetAiBtn.textContent = isHideAction ? 'Hide AI Ranking Insight' : 'Load AI Ranking Insight';
   }
 
-  function renderRankSetResult(data) {
-    const unresolved = (data.unresolved || []).join(', ') || 'None';
-    rankSetMeta.textContent = `Input: ${data.input_size || 0} | Resolved: ${data.resolved_count || 0} | Unresolved: ${unresolved}`;
+  function resetRankSetHeaderLabels() {
+    document.getElementById('rankSetThTitle').textContent = 'Title';
+    document.getElementById('rankSetThRating').textContent = 'Rating';
+    document.getElementById('rankSetThPopularity').textContent = 'Popularity';
+  }
 
+  function updateRankSetSortHeaderLabel(key, state) {
+    resetRankSetHeaderLabels();
+    if (!key || state === 'default') return;
+
+    if (key === 'title') {
+      document.getElementById('rankSetThTitle').textContent = 'Title (A-Z)';
+      return;
+    }
+    if (key === 'rating') {
+      document.getElementById('rankSetThRating').textContent = state === 'desc' ? 'Rating ↓' : 'Rating ↑';
+      return;
+    }
+    if (key === 'popularity') {
+      document.getElementById('rankSetThPopularity').textContent = state === 'desc' ? 'Popularity ↓' : 'Popularity ↑';
+    }
+  }
+
+  function getRankSetSortStateFromActive() {
+    if (!rankSetActiveSort.key) return 'default';
+    const cycle = RANK_SET_SORT_CYCLES[rankSetActiveSort.key] || ['default'];
+    return cycle[rankSetActiveSort.stateIndex] || 'default';
+  }
+
+  function getRankSetSortedRows(sortKey, state) {
+    let sorted = [...rankSetDefaultRowsData];
+    if (!sortKey || state === 'default') {
+      return sorted;
+    }
+
+    if (sortKey === 'title') {
+      sorted.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' }));
+    } else if (sortKey === 'rating') {
+      sorted.sort((a, b) => Number(a.rating || 0) - Number(b.rating || 0));
+    } else if (sortKey === 'popularity') {
+      sorted.sort((a, b) => Number(a.popularity || 0) - Number(b.popularity || 0));
+    }
+
+    if (state === 'desc') sorted.reverse();
+    return sorted;
+  }
+
+  function renderRankSetRows(rowData) {
     rankSetRows.innerHTML = '';
-    (data.results || []).forEach((row, idx) => {
+    rowData.forEach((row, idx) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}</td>
@@ -1409,6 +1469,55 @@ RANK_SET_SCRIPT = """
       `;
       rankSetRows.appendChild(tr);
     });
+  }
+
+  function getNextRankSetSortState(sortKey) {
+    const cycle = RANK_SET_SORT_CYCLES[sortKey] || ['default'];
+    if (rankSetActiveSort.key !== sortKey) {
+      rankSetActiveSort = { key: sortKey, stateIndex: 0 };
+      return cycle[0];
+    }
+    const nextIndex = (rankSetActiveSort.stateIndex + 1) % cycle.length;
+    rankSetActiveSort = { key: sortKey, stateIndex: nextIndex };
+    return cycle[nextIndex];
+  }
+
+  function applyRankSetSort(sortKey) {
+    if (!rankSetDefaultRowsData.length) return;
+
+    const state = getNextRankSetSortState(sortKey);
+    if (state === 'default') {
+      rankSetActiveSort = { key: null, stateIndex: 0 };
+      rankSetCurrentRowsData = [...rankSetDefaultRowsData];
+      updateRankSetSortHeaderLabel(null, 'default');
+      renderRankSetRows(rankSetCurrentRowsData);
+      saveRankSetState();
+      return;
+    }
+
+    rankSetCurrentRowsData = getRankSetSortedRows(sortKey, state);
+    updateRankSetSortHeaderLabel(sortKey, state);
+    renderRankSetRows(rankSetCurrentRowsData);
+    saveRankSetState();
+  }
+
+  function renderRankSetResult(data, preserveSort = false) {
+    const unresolved = (data.unresolved || []).join(', ') || 'None';
+    rankSetMeta.textContent = `Input: ${data.input_size || 0} | Resolved: ${data.resolved_count || 0} | Unresolved: ${unresolved}`;
+
+    rankSetDefaultRowsData = [...(data.results || [])];
+
+    if (!preserveSort) {
+      rankSetActiveSort = { key: null, stateIndex: 0 };
+      rankSetCurrentRowsData = [...rankSetDefaultRowsData];
+      updateRankSetSortHeaderLabel(null, 'default');
+    } else {
+      const state = getRankSetSortStateFromActive();
+      rankSetCurrentRowsData = getRankSetSortedRows(rankSetActiveSort.key, state);
+      updateRankSetSortHeaderLabel(rankSetActiveSort.key, state);
+    }
+
+    renderRankSetRows(rankSetCurrentRowsData);
 
     rankSetResult.style.display = 'block';
   }
@@ -1420,7 +1529,14 @@ RANK_SET_SCRIPT = """
     if (state.data) {
       lastRankSetData = state.data;
       lastRankSetReferences = parseReferences(state.input || '');
-      renderRankSetResult(state.data);
+      rankSetDefaultRowsData = Array.isArray(state.defaultRowsData) && state.defaultRowsData.length
+        ? state.defaultRowsData
+        : [...(state.data.results || [])];
+      rankSetCurrentRowsData = Array.isArray(state.currentRowsData) && state.currentRowsData.length
+        ? state.currentRowsData
+        : [...rankSetDefaultRowsData];
+      rankSetActiveSort = state.activeSort || { key: null, stateIndex: 0 };
+      renderRankSetResult(state.data, true);
       showRankSetAiPrompt();
       if (state.aiText) {
         rankSetAiText.textContent = state.aiText;
@@ -1625,6 +1741,13 @@ RANK_SET_SCRIPT = """
   });
 
   rankSetBtn.addEventListener('click', runRankSet);
+  rankSetSortHeaders.forEach((th) => {
+    th.addEventListener('click', () => {
+      const sortKey = th.dataset.sortKey;
+      if (sortKey) applyRankSetSort(sortKey);
+    });
+  });
+
   rankSetAiBtn.addEventListener('click', () => {
     if (rankSetAiText.style.display === 'block' && rankSetAiLoading.style.display !== 'flex') {
       hideRankSetAiContent();
@@ -1687,12 +1810,12 @@ RANK_TOP_CONTENT = """
         <thead>
           <tr>
             <th>Rank</th>
-            <th>Title</th>
+            <th id="rankTopThTitle" data-sort-key="title">Title</th>
             <th>IMDb ID</th>
             <th>Type</th>
             <th>Year</th>
-            <th>Rating</th>
-            <th>Popularity</th>
+            <th id="rankTopThRating" data-sort-key="rating">Rating</th>
+            <th id="rankTopThPopularity" data-sort-key="popularity">Popularity</th>
             <th>Genre</th>
           </tr>
         </thead>
@@ -1725,14 +1848,27 @@ RANK_TOP_SCRIPT = """
   const rankTopResult = document.getElementById('rankTopResult');
   const rankTopMeta = document.getElementById('rankTopMeta');
   const rankTopRows = document.getElementById('rankTopRows');
+  const rankTopSortHeaders = [
+    document.getElementById('rankTopThTitle'),
+    document.getElementById('rankTopThRating'),
+    document.getElementById('rankTopThPopularity')
+  ];
   const topGenreSuggestions = document.getElementById('topGenreSuggestions');
   const topYearSuggestions = document.getElementById('topYearSuggestions');
   const rankTopAiBlock = document.getElementById('rankTopAiBlock');
   const rankTopAiLoading = document.getElementById('rankTopAiLoading');
   const rankTopAiText = document.getElementById('rankTopAiText');
   const rankTopAiBtn = document.getElementById('rankTopAiBtn');
+  const RANK_TOP_SORT_CYCLES = {
+    title: ['asc', 'default'],
+    rating: ['desc', 'asc', 'default'],
+    popularity: ['desc', 'asc', 'default']
+  };
   let lastRankTopData = null;
   let lastRankTopPayload = null;
+  let rankTopDefaultRowsData = [];
+  let rankTopCurrentRowsData = [];
+  let rankTopActiveSort = { key: null, stateIndex: 0 };
 
   function saveRankTopState() {
     window.movieStateStore.save(RANK_TOP_STATE_KEY, {
@@ -1741,6 +1877,9 @@ RANK_TOP_SCRIPT = """
       mode: topMode.value || 'both',
       topK: topK.value || '10',
       data: lastRankTopData,
+      defaultRowsData: rankTopDefaultRowsData,
+      currentRowsData: rankTopCurrentRowsData,
+      activeSort: rankTopActiveSort,
       aiText: rankTopAiText.textContent || '',
       aiVisible: rankTopAiText.style.display !== 'none' && rankTopAiLoading.style.display !== 'flex',
     });
@@ -1750,12 +1889,56 @@ RANK_TOP_SCRIPT = """
     rankTopAiBtn.textContent = isHideAction ? 'Hide AI Ranking Insight' : 'Load AI Ranking Insight';
   }
 
-  function renderRankTopResult(data) {
-    const criteria = data.criteria || {};
-    rankTopMeta.textContent = `genre=${criteria.genre || 'any'} | year=${criteria.year ?? 'any'} | content=${criteria.content_mode || 'both'} | candidates=${data.candidate_count || 0}`;
+  function resetRankTopHeaderLabels() {
+    document.getElementById('rankTopThTitle').textContent = 'Title';
+    document.getElementById('rankTopThRating').textContent = 'Rating';
+    document.getElementById('rankTopThPopularity').textContent = 'Popularity';
+  }
 
+  function updateRankTopSortHeaderLabel(key, state) {
+    resetRankTopHeaderLabels();
+    if (!key || state === 'default') return;
+
+    if (key === 'title') {
+      document.getElementById('rankTopThTitle').textContent = 'Title (A-Z)';
+      return;
+    }
+    if (key === 'rating') {
+      document.getElementById('rankTopThRating').textContent = state === 'desc' ? 'Rating ↓' : 'Rating ↑';
+      return;
+    }
+    if (key === 'popularity') {
+      document.getElementById('rankTopThPopularity').textContent = state === 'desc' ? 'Popularity ↓' : 'Popularity ↑';
+    }
+  }
+
+  function getRankTopSortStateFromActive() {
+    if (!rankTopActiveSort.key) return 'default';
+    const cycle = RANK_TOP_SORT_CYCLES[rankTopActiveSort.key] || ['default'];
+    return cycle[rankTopActiveSort.stateIndex] || 'default';
+  }
+
+  function getRankTopSortedRows(sortKey, state) {
+    let sorted = [...rankTopDefaultRowsData];
+    if (!sortKey || state === 'default') {
+      return sorted;
+    }
+
+    if (sortKey === 'title') {
+      sorted.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' }));
+    } else if (sortKey === 'rating') {
+      sorted.sort((a, b) => Number(a.rating || 0) - Number(b.rating || 0));
+    } else if (sortKey === 'popularity') {
+      sorted.sort((a, b) => Number(a.popularity || 0) - Number(b.popularity || 0));
+    }
+
+    if (state === 'desc') sorted.reverse();
+    return sorted;
+  }
+
+  function renderRankTopRows(rowData) {
     rankTopRows.innerHTML = '';
-    (data.results || []).forEach((row, idx) => {
+    rowData.forEach((row, idx) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}</td>
@@ -1769,6 +1952,55 @@ RANK_TOP_SCRIPT = """
       `;
       rankTopRows.appendChild(tr);
     });
+  }
+
+  function getNextRankTopSortState(sortKey) {
+    const cycle = RANK_TOP_SORT_CYCLES[sortKey] || ['default'];
+    if (rankTopActiveSort.key !== sortKey) {
+      rankTopActiveSort = { key: sortKey, stateIndex: 0 };
+      return cycle[0];
+    }
+    const nextIndex = (rankTopActiveSort.stateIndex + 1) % cycle.length;
+    rankTopActiveSort = { key: sortKey, stateIndex: nextIndex };
+    return cycle[nextIndex];
+  }
+
+  function applyRankTopSort(sortKey) {
+    if (!rankTopDefaultRowsData.length) return;
+
+    const state = getNextRankTopSortState(sortKey);
+    if (state === 'default') {
+      rankTopActiveSort = { key: null, stateIndex: 0 };
+      rankTopCurrentRowsData = [...rankTopDefaultRowsData];
+      updateRankTopSortHeaderLabel(null, 'default');
+      renderRankTopRows(rankTopCurrentRowsData);
+      saveRankTopState();
+      return;
+    }
+
+    rankTopCurrentRowsData = getRankTopSortedRows(sortKey, state);
+    updateRankTopSortHeaderLabel(sortKey, state);
+    renderRankTopRows(rankTopCurrentRowsData);
+    saveRankTopState();
+  }
+
+  function renderRankTopResult(data, preserveSort = false) {
+    const criteria = data.criteria || {};
+    rankTopMeta.textContent = `genre=${criteria.genre || 'any'} | year=${criteria.year ?? 'any'} | content=${criteria.content_mode || 'both'} | candidates=${data.candidate_count || 0}`;
+
+    rankTopDefaultRowsData = [...(data.results || [])];
+
+    if (!preserveSort) {
+      rankTopActiveSort = { key: null, stateIndex: 0 };
+      rankTopCurrentRowsData = [...rankTopDefaultRowsData];
+      updateRankTopSortHeaderLabel(null, 'default');
+    } else {
+      const state = getRankTopSortStateFromActive();
+      rankTopCurrentRowsData = getRankTopSortedRows(rankTopActiveSort.key, state);
+      updateRankTopSortHeaderLabel(rankTopActiveSort.key, state);
+    }
+
+    renderRankTopRows(rankTopCurrentRowsData);
 
     rankTopResult.style.display = 'block';
   }
@@ -1782,6 +2014,13 @@ RANK_TOP_SCRIPT = """
     topK.value = state.topK || '10';
     if (state.data) {
       lastRankTopData = state.data;
+      rankTopDefaultRowsData = Array.isArray(state.defaultRowsData) && state.defaultRowsData.length
+        ? state.defaultRowsData
+        : [...(state.data.results || [])];
+      rankTopCurrentRowsData = Array.isArray(state.currentRowsData) && state.currentRowsData.length
+        ? state.currentRowsData
+        : [...rankTopDefaultRowsData];
+      rankTopActiveSort = state.activeSort || { key: null, stateIndex: 0 };
       const criteria = state.data.criteria || {};
       lastRankTopPayload = {
         genre: criteria.genre || '',
@@ -1789,7 +2028,7 @@ RANK_TOP_SCRIPT = """
         content_mode: criteria.content_mode || state.mode || 'both',
         top_k: Number(state.topK || 10) || 10,
       };
-      renderRankTopResult(state.data);
+      renderRankTopResult(state.data, true);
       showRankTopAiPrompt();
       if (state.aiText) {
         rankTopAiText.textContent = state.aiText;
@@ -2028,6 +2267,13 @@ RANK_TOP_SCRIPT = """
   }
 
   rankTopBtn.addEventListener('click', runRankTop);
+  rankTopSortHeaders.forEach((th) => {
+    th.addEventListener('click', () => {
+      const sortKey = th.dataset.sortKey;
+      if (sortKey) applyRankTopSort(sortKey);
+    });
+  });
+
   rankTopAiBtn.addEventListener('click', () => {
     if (rankTopAiText.style.display === 'block' && rankTopAiLoading.style.display !== 'flex') {
       hideRankTopAiContent();
