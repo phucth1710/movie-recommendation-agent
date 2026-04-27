@@ -268,6 +268,54 @@ PAGE_SHELL = """
       color: #0b57d0;
     }
 
+    .metric-tooltip {
+      position: relative;
+      cursor: help;
+    }
+
+    .metric-tooltip::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      transform: translate(-50%, 8px);
+      width: max-content;
+      max-width: 280px;
+      white-space: normal;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.35;
+      padding: 8px 10px;
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 20;
+      transition: opacity 0.15s ease;
+    }
+
+    .metric-tooltip::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      transform: translateX(-50%);
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-bottom: 6px solid #0f172a;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 21;
+      transition: opacity 0.15s ease;
+    }
+
+    .metric-tooltip:hover::after,
+    .metric-tooltip:hover::before {
+      opacity: 1;
+    }
+
     .hint {
       margin: 10px 0 0;
       color: #475569;
@@ -492,8 +540,8 @@ SIMILAR_CONTENT = """
             <th id="thRating" data-sort-key="rating">Rating</th>
             <th id="thPopularity" data-sort-key="popularity">Popularity</th>
             <th>Genre</th>
-            <th>Similarity</th>
-            <th>Composite</th>
+            <th class="metric-tooltip" data-tooltip="Similarity score shows how close a candidate is to the source based on genre overlap, release year proximity, and rating similarity.">Similarity</th>
+            <th class="metric-tooltip" data-tooltip="Composite score is the final ranking score: 70% similarity, 20% normalized rating, and 10% normalized popularity.">Composite</th>
             <th>More Detail</th>
           </tr>
         </thead>
