@@ -1888,16 +1888,16 @@ RANK_TOP_SCRIPT = """
     dropdown.innerHTML = '';
   }
 
-  async function fetchGenreSuggestions() {
-    const q = topGenre.value.trim();
-    if (q.length < 1) {
-      hideTopSuggestions(topGenreSuggestions);
-      return;
-    }
+  let topGenreCatalog = [];
 
-    const res = await fetch(`/suggest/genres?q=${encodeURIComponent(q)}`);
+  async function loadTopGenreCatalog() {
+    const res = await fetch('/suggest/genres?q=&limit=5000');
     const data = await res.json();
-    const items = data.items || [];
+    const items = Array.isArray(data.items) ? data.items : [];
+    topGenreCatalog = items.sort((a, b) => String(a.genre || '').localeCompare(String(b.genre || ''), undefined, { sensitivity: 'base' }));
+  }
+
+  function renderTopGenreSuggestions(items) {
     if (!items.length) {
       hideTopSuggestions(topGenreSuggestions);
       return;
@@ -1915,6 +1915,19 @@ RANK_TOP_SCRIPT = """
       topGenreSuggestions.appendChild(div);
     });
     topGenreSuggestions.style.display = 'block';
+  }
+
+  async function fetchGenreSuggestions() {
+    if (!topGenreCatalog.length) {
+      await loadTopGenreCatalog();
+    }
+
+    const q = topGenre.value.trim().toLowerCase();
+    const filtered = q
+      ? topGenreCatalog.filter((item) => String(item.genre || '').toLowerCase().includes(q))
+      : topGenreCatalog;
+
+    renderTopGenreSuggestions(filtered.slice(0, 120));
   }
 
   async function fetchYearSuggestions() {
@@ -2041,6 +2054,10 @@ RANK_TOP_SCRIPT = """
   topGenre.addEventListener('input', () => {
     clearTimeout(topGenreTimer);
     topGenreTimer = setTimeout(fetchGenreSuggestions, 120);
+  });
+
+  topGenre.addEventListener('focus', () => {
+    fetchGenreSuggestions();
   });
 
   topYear.addEventListener('input', () => {
@@ -2395,17 +2412,23 @@ def _render_page(title: str, active: str, content: str, script: str = "") -> str
     )
 
 
+def _clean_placeholder(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.lower() == r"\n":
+        return ""
+    return text
+
+
 def _movie_title(movie: Any) -> str:
-    return str(getattr(movie, "Name", "") or "").strip()
+    return _clean_placeholder(getattr(movie, "Name", ""))
 
 
 def _movie_id(movie: Any) -> str:
-    return str(getattr(movie, "imdb_id", "") or "").strip()
+    return _clean_placeholder(getattr(movie, "imdb_id", ""))
 
 
 def _movie_year(movie: Any) -> str:
-    value = getattr(movie, "Year", "")
-    return str(value) if value is not None else ""
+    return _clean_placeholder(getattr(movie, "Year", ""))
 
 
 def _suggest_movies(query: str, limit: int = MAX_SUGGESTIONS) -> List[Dict[str, str]]:
@@ -2456,30 +2479,28 @@ def _suggest_movies(query: str, limit: int = MAX_SUGGESTIONS) -> List[Dict[str, 
 
 
 def _suggest_genres(query: str, limit: int = MAX_SUGGESTIONS) -> List[Dict[str, Any]]:
-    q = str(query or "").strip().lower()
-    if not q:
-        return []
+  q = str(query or "").strip().lower()
 
-    movies = load_movie_universe()
-    counts: Dict[str, int] = {}
-    labels: Dict[str, str] = {}
+  movies = load_movie_universe()
+  counts: Dict[str, int] = {}
+  labels: Dict[str, str] = {}
 
-    for movie in movies:
-        for token in parse_genre_tokens(getattr(movie, "Genre", "")):
-            normalized = token.strip().lower()
-            if not normalized:
-                continue
-            counts[normalized] = counts.get(normalized, 0) + 1
-            if normalized not in labels:
-                labels[normalized] = token.strip()
+  for movie in movies:
+    for token in parse_genre_tokens(getattr(movie, "Genre", "")):
+      normalized = token.strip().lower()
+      if not normalized or normalized == r"\n":
+        continue
+      counts[normalized] = counts.get(normalized, 0) + 1
+      if normalized not in labels:
+        labels[normalized] = _clean_placeholder(token)
 
-    matches: List[Dict[str, Any]] = []
-    for normalized, count in counts.items():
-        if q in normalized:
-            matches.append({"genre": labels.get(normalized, normalized.title()), "count": count})
+  matches: List[Dict[str, Any]] = []
+  for normalized, count in counts.items():
+    if not q or q in normalized:
+      matches.append({"genre": labels.get(normalized, normalized.title()), "count": count})
 
-    matches.sort(key=lambda item: (-int(item["count"]), str(item["genre"]).lower()))
-    return matches[: max(1, limit)]
+  matches.sort(key=lambda item: str(item["genre"]).lower())
+  return matches[: max(1, limit)]
 
 
 def _suggest_years(query: str, limit: int = MAX_SUGGESTIONS) -> List[Dict[str, Any]]:
@@ -2683,8 +2704,10 @@ def suggest() -> Any:
 
 @app.route("/suggest/genres", methods=["GET"])
 def suggest_genres() -> Any:
-    query = request.args.get("q", "")
-    return jsonify({"items": _suggest_genres(query)})
+  query = request.args.get("q", "")
+  limit_text = request.args.get("limit", str(MAX_SUGGESTIONS))
+  limit = safe_int(limit_text, MAX_SUGGESTIONS)
+  return jsonify({"items": _suggest_genres(query, limit=max(1, limit))})
 
 
 @app.route("/suggest/years", methods=["GET"])
