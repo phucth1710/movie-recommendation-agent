@@ -1063,6 +1063,8 @@ COMPARE_SCRIPT = """
       const firstMovie = data.first_movie || {};
       const secondMovie = data.second_movie || {};
       const comparison = data.comparison || {};
+      const firstLabel = firstMovie.title || 'First movie';
+      const secondLabel = secondMovie.title || 'Second movie';
 
       firstHeader.textContent = firstMovie.title || 'First';
       secondHeader.textContent = secondMovie.title || 'Second';
@@ -1077,11 +1079,36 @@ COMPARE_SCRIPT = """
       appendCompareRow('Rating', Number(firstMovie.rating || 0).toFixed(1), Number(secondMovie.rating || 0).toFixed(1));
       appendCompareRow('Popularity', firstMovie.popularity || 0, secondMovie.popularity || 0);
       appendCompareRow('Description', firstMovie.description || '', secondMovie.description || '');
-      appendCompareRow('Rating diff (first-second)', comparison.rating_diff ?? 0, '');
-      appendCompareRow('Popularity diff (first-second)', comparison.popularity_diff ?? 0, '');
-      appendCompareRow('Year diff (first-second)', comparison.year_diff ?? 0, '');
+      appendCompareRow('Rating Difference', formatRatingDifference(comparison.rating_diff, firstLabel, secondLabel), '');
+      appendCompareRow('Popularity Gap', formatPopularityGap(comparison.popularity_diff, firstLabel, secondLabel), '');
+      appendCompareRow('Years Apart', formatYearGap(comparison.year_diff, firstLabel, secondLabel), '');
 
       compareResult.style.display = 'block';
+  }
+
+  function formatRatingDifference(diff, firstLabel, secondLabel) {
+    const value = Number(diff || 0);
+    if (!Number.isFinite(value)) return 'N/A';
+    if (value === 0) return 'Same rating';
+    const amount = Math.abs(value).toFixed(1);
+    return value > 0 ? `${firstLabel} is higher by ${amount}` : `${secondLabel} is higher by ${amount}`;
+  }
+
+  function formatPopularityGap(diff, firstLabel, secondLabel) {
+    const value = Number(diff || 0);
+    if (!Number.isFinite(value)) return 'N/A';
+    if (value === 0) return 'Same popularity';
+    const amount = Math.abs(Math.round(value)).toLocaleString();
+    return value > 0 ? `${firstLabel} has ${amount} more votes` : `${secondLabel} has ${amount} more votes`;
+  }
+
+  function formatYearGap(diff, firstLabel, secondLabel) {
+    const value = Number(diff || 0);
+    if (!Number.isFinite(value)) return 'N/A';
+    if (value === 0) return 'Same release year';
+    const years = Math.abs(Math.round(value));
+    const suffix = years === 1 ? 'year' : 'years';
+    return value > 0 ? `${firstLabel} is newer by ${years} ${suffix}` : `${secondLabel} is newer by ${years} ${suffix}`;
   }
 
   async function fetchAiInsight(first, second) {
