@@ -534,7 +534,7 @@ SIMILAR_CONTENT = """
           <tr>
             <th>Rank</th>
             <th id="thTitle" data-sort-key="title">Title</th>
-            <th>IMDb ID</th>
+            <th class="metric-tooltip" data-tooltip="An IMDb ID is a unique code for every movie and show. Because titles are often the same, using this ID ensures you find the exact version you’re looking for. Our search fully supports these codes.">IMDb ID</th>
             <th>Type</th>
             <th id="thYear" data-sort-key="year">Year</th>
             <th id="thRating" data-sort-key="rating">Rating</th>
@@ -1342,7 +1342,7 @@ RANK_SET_CONTENT = """
           <tr>
             <th>Rank</th>
             <th id="rankSetThTitle" data-sort-key="title">Title</th>
-            <th>IMDb ID</th>
+            <th class="metric-tooltip" data-tooltip="An IMDb ID is a unique code for every movie and show. Because titles are often the same, using this ID ensures you find the exact version you’re looking for. Our search fully supports these codes.">IMDb ID</th>
             <th>Type</th>
             <th id="rankSetThYear" data-sort-key="year">Year</th>
             <th id="rankSetThRating" data-sort-key="rating">Rating</th>
@@ -1829,7 +1829,7 @@ RANK_TOP_CONTENT = """
           <tr>
             <th>Rank</th>
             <th id="rankTopThTitle" data-sort-key="title">Title</th>
-            <th>IMDb ID</th>
+            <th class="metric-tooltip" data-tooltip="An IMDb ID is a unique code for every movie and show. Because titles are often the same, using this ID ensures you find the exact version you’re looking for. Our search fully supports these codes.">IMDb ID</th>
             <th>Type</th>
             <th id="rankTopThYear" data-sort-key="year">Year</th>
             <th id="rankTopThRating" data-sort-key="rating">Rating</th>
