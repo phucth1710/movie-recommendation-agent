@@ -536,7 +536,7 @@ SIMILAR_CONTENT = """
             <th id="thTitle" data-sort-key="title">Title</th>
             <th>IMDb ID</th>
             <th>Type</th>
-            <th>Year</th>
+            <th id="thYear" data-sort-key="year">Year</th>
             <th id="thRating" data-sort-key="rating">Rating</th>
             <th id="thPopularity" data-sort-key="popularity">Popularity</th>
             <th>Genre</th>
@@ -566,12 +566,14 @@ SIMILAR_SCRIPT = """
   const loading = document.getElementById('loading');
   const sortHeaders = [
     document.getElementById('thTitle'),
+    document.getElementById('thYear'),
     document.getElementById('thRating'),
     document.getElementById('thPopularity')
   ];
 
   const SORT_CYCLES = {
     title: ['asc', 'default'],
+    year: ['asc', 'desc', 'default'],
     rating: ['desc', 'asc', 'default'],
     popularity: ['desc', 'asc', 'default']
   };
@@ -643,6 +645,7 @@ SIMILAR_SCRIPT = """
 
   function resetHeaderLabels() {
     document.getElementById('thTitle').textContent = 'Title';
+    document.getElementById('thYear').textContent = 'Year';
     document.getElementById('thRating').textContent = 'Rating';
     document.getElementById('thPopularity').textContent = 'Popularity';
   }
@@ -653,6 +656,10 @@ SIMILAR_SCRIPT = """
 
     if (key === 'title') {
       document.getElementById('thTitle').textContent = 'Title (A-Z)';
+      return;
+    }
+    if (key === 'year') {
+      document.getElementById('thYear').textContent = state === 'desc' ? 'Year ↓' : 'Year ↑';
       return;
     }
     if (key === 'rating') {
@@ -768,6 +775,8 @@ SIMILAR_SCRIPT = """
 
     if (sortKey === 'title') {
       sorted.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' }));
+    } else if (sortKey === 'year') {
+      sorted.sort((a, b) => Number(a.year || 0) - Number(b.year || 0));
     } else if (sortKey === 'rating') {
       sorted.sort((a, b) => Number(a.rating || 0) - Number(b.rating || 0));
     } else if (sortKey === 'popularity') {
@@ -1335,7 +1344,7 @@ RANK_SET_CONTENT = """
             <th id="rankSetThTitle" data-sort-key="title">Title</th>
             <th>IMDb ID</th>
             <th>Type</th>
-            <th>Year</th>
+            <th id="rankSetThYear" data-sort-key="year">Year</th>
             <th id="rankSetThRating" data-sort-key="rating">Rating</th>
             <th id="rankSetThPopularity" data-sort-key="popularity">Popularity</th>
             <th>Length</th>
@@ -1370,6 +1379,7 @@ RANK_SET_SCRIPT = """
   const rankSetRows = document.getElementById('rankSetRows');
   const rankSetSortHeaders = [
     document.getElementById('rankSetThTitle'),
+    document.getElementById('rankSetThYear'),
     document.getElementById('rankSetThRating'),
     document.getElementById('rankSetThPopularity')
   ];
@@ -1380,6 +1390,7 @@ RANK_SET_SCRIPT = """
   const rankSetAiBtn = document.getElementById('rankSetAiBtn');
   const RANK_SET_SORT_CYCLES = {
     title: ['asc', 'default'],
+    year: ['asc', 'desc', 'default'],
     rating: ['desc', 'asc', 'default'],
     popularity: ['desc', 'asc', 'default']
   };
@@ -1407,6 +1418,7 @@ RANK_SET_SCRIPT = """
 
   function resetRankSetHeaderLabels() {
     document.getElementById('rankSetThTitle').textContent = 'Title';
+    document.getElementById('rankSetThYear').textContent = 'Year';
     document.getElementById('rankSetThRating').textContent = 'Rating';
     document.getElementById('rankSetThPopularity').textContent = 'Popularity';
   }
@@ -1417,6 +1429,10 @@ RANK_SET_SCRIPT = """
 
     if (key === 'title') {
       document.getElementById('rankSetThTitle').textContent = 'Title (A-Z)';
+      return;
+    }
+    if (key === 'year') {
+      document.getElementById('rankSetThYear').textContent = state === 'desc' ? 'Year ↓' : 'Year ↑';
       return;
     }
     if (key === 'rating') {
@@ -1442,6 +1458,8 @@ RANK_SET_SCRIPT = """
 
     if (sortKey === 'title') {
       sorted.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' }));
+    } else if (sortKey === 'year') {
+      sorted.sort((a, b) => Number(a.year || 0) - Number(b.year || 0));
     } else if (sortKey === 'rating') {
       sorted.sort((a, b) => Number(a.rating || 0) - Number(b.rating || 0));
     } else if (sortKey === 'popularity') {
@@ -1813,7 +1831,7 @@ RANK_TOP_CONTENT = """
             <th id="rankTopThTitle" data-sort-key="title">Title</th>
             <th>IMDb ID</th>
             <th>Type</th>
-            <th>Year</th>
+            <th id="rankTopThYear" data-sort-key="year">Year</th>
             <th id="rankTopThRating" data-sort-key="rating">Rating</th>
             <th id="rankTopThPopularity" data-sort-key="popularity">Popularity</th>
             <th>Genre</th>
@@ -1850,6 +1868,7 @@ RANK_TOP_SCRIPT = """
   const rankTopRows = document.getElementById('rankTopRows');
   const rankTopSortHeaders = [
     document.getElementById('rankTopThTitle'),
+    document.getElementById('rankTopThYear'),
     document.getElementById('rankTopThRating'),
     document.getElementById('rankTopThPopularity')
   ];
@@ -1861,6 +1880,7 @@ RANK_TOP_SCRIPT = """
   const rankTopAiBtn = document.getElementById('rankTopAiBtn');
   const RANK_TOP_SORT_CYCLES = {
     title: ['asc', 'default'],
+    year: ['asc', 'desc', 'default'],
     rating: ['desc', 'asc', 'default'],
     popularity: ['desc', 'asc', 'default']
   };
@@ -1891,6 +1911,7 @@ RANK_TOP_SCRIPT = """
 
   function resetRankTopHeaderLabels() {
     document.getElementById('rankTopThTitle').textContent = 'Title';
+    document.getElementById('rankTopThYear').textContent = 'Year';
     document.getElementById('rankTopThRating').textContent = 'Rating';
     document.getElementById('rankTopThPopularity').textContent = 'Popularity';
   }
@@ -1901,6 +1922,10 @@ RANK_TOP_SCRIPT = """
 
     if (key === 'title') {
       document.getElementById('rankTopThTitle').textContent = 'Title (A-Z)';
+      return;
+    }
+    if (key === 'year') {
+      document.getElementById('rankTopThYear').textContent = state === 'desc' ? 'Year ↓' : 'Year ↑';
       return;
     }
     if (key === 'rating') {
@@ -1926,6 +1951,8 @@ RANK_TOP_SCRIPT = """
 
     if (sortKey === 'title') {
       sorted.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' }));
+    } else if (sortKey === 'year') {
+      sorted.sort((a, b) => Number(a.year || 0) - Number(b.year || 0));
     } else if (sortKey === 'rating') {
       sorted.sort((a, b) => Number(a.rating || 0) - Number(b.rating || 0));
     } else if (sortKey === 'popularity') {
