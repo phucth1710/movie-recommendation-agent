@@ -1347,7 +1347,6 @@ RANK_SET_CONTENT = """
             <th id="rankSetThYear" data-sort-key="year">Year</th>
             <th id="rankSetThRating" data-sort-key="rating">Rating</th>
             <th id="rankSetThPopularity" data-sort-key="popularity">Popularity</th>
-            <th>Length</th>
             <th>Genre</th>
           </tr>
         </thead>
@@ -1482,7 +1481,6 @@ RANK_SET_SCRIPT = """
         <td>${row.year ?? ''}</td>
         <td>${Number(row.rating || 0).toFixed(1)}</td>
         <td>${row.popularity ?? ''}</td>
-        <td>${row.length ?? ''}</td>
         <td>${row.genre || ''}</td>
       `;
       rankSetRows.appendChild(tr);
