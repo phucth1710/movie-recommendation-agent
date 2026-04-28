@@ -542,7 +542,7 @@ SIMILAR_CONTENT = """
             <th>Genre</th>
             <th class="metric-tooltip" data-tooltip="Similarity score shows how close a candidate is to the source based on genre overlap, release year proximity, and rating similarity.">Similarity</th>
             <th class="metric-tooltip" data-tooltip="Composite score is the final ranking score: 70% similarity, 20% normalized rating, and 10% normalized popularity.">Composite</th>
-            <th>More Detail</th>
+            <th aria-label="More detail actions"></th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
