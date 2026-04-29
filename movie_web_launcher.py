@@ -3256,7 +3256,14 @@ def basic_description_insight_api() -> Any:
 
     prompt = (
       "Write an essay for a general audience using the movie profile below. "
-      "Use 3 paragraphs, each with a distinct focus, and make the full essay flow naturally from one to the next:\n\n"
+      "Use 3 paragraphs, each with a distinct focus, and make the full essay flow naturally from one to the next.\n\n"
+      "FORMAT — Each paragraph MUST be preceded by an exact Markdown bold heading on its own line, written "
+      "verbatim as shown below (including the question marks and the period), followed by a newline and then the "
+      "paragraph text. Do NOT alter, translate, shorten, or rephrase the headings. Do NOT use '#' headings — "
+      "only the '**...**' bold form. Leave a blank line between each heading-and-paragraph block.\n"
+      "  Heading before Paragraph 1: **What is the movie/show about (Summary)?**\n"
+      "  Heading before Paragraph 2: **What type of audience will enjoy this?**\n"
+      "  Heading before Paragraph 3: **IMDB scores and Public Reception.**\n\n"
       "Paragraph 1 — Plot summary (REAL STORY CONTENT, NOT META-DESCRIPTION):\n"
       "You MUST write an actual narrative summary of what happens in the story. The reader should finish this "
       "paragraph knowing the main characters by name, the inciting event, the central conflict, and what is at "
