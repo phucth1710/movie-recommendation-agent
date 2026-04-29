@@ -2975,6 +2975,7 @@ async def _run_ai_text_insight(prompt: str) -> Dict[str, Any]:
         instructions=(
             "You are a concise movie assistant. "
             "Use only the provided structured data. "
+            "Always return in markdown format."
         ),
         tools=[],
         model="gpt-5.5",
