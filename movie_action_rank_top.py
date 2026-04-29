@@ -153,7 +153,7 @@ class RankedTopOutput(BaseModel):
     results: List[RankedTopItem]
 
 
-def build_rank_top_agent(model: str = "gpt-5-nano") -> Agent:
+def build_rank_top_agent(model: str = "gpt-5.5") -> Agent:
     instruction = """
 You are a deterministic ranking agent for top movies/shows by genre or year.
 
@@ -183,7 +183,7 @@ async def run_rank_top_with_agent(
     year: Optional[int],
     content_mode: str,
     top_k: int,
-    model: str = "gpt-5-nano",
+    model: str = "gpt-5.5",
 ) -> Dict[str, Any]:
     agent = build_rank_top_agent(model=model)
     prompt = (

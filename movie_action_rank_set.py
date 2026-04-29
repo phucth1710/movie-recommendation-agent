@@ -122,7 +122,7 @@ class RankedSetOutput(BaseModel):
     results: List[RankedSetItem]
 
 
-def build_rank_set_agent(model: str = "gpt-5-nano") -> Agent:
+def build_rank_set_agent(model: str = "gpt-5.5") -> Agent:
     instruction = """
 You are a deterministic ranking agent for a user-provided set.
 
@@ -147,7 +147,7 @@ Output rules:
     )
 
 
-async def run_rank_set_with_agent(references: List[str], model: str = "gpt-5-nano") -> Dict[str, Any]:
+async def run_rank_set_with_agent(references: List[str], model: str = "gpt-5.5") -> Dict[str, Any]:
     references_csv = ", ".join([r for r in references if str(r).strip()])
     agent = build_rank_set_agent(model=model)
     prompt = (

@@ -174,7 +174,7 @@ def pretty_report(report: MovieRanking) -> None:
         print(report.notes)
 
 
-def build_agent(model: str = "gpt-5-nano") -> Agent:
+def build_agent(model: str = "gpt-5.5") -> Agent:
     instruction = f"""
 You are a deterministic movie ranking and recommendation agent.
 

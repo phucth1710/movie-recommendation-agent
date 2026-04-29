@@ -209,7 +209,7 @@ class AIComparisonInsight(BaseModel):
     taste_recommendation: str
 
 
-def build_compare_agent(model: str = "gpt-5-nano") -> Agent:
+def build_compare_agent(model: str = "gpt-5.5") -> Agent:
     instruction = """
 You are a deterministic movie comparison agent.
 
@@ -238,7 +238,7 @@ Output rules:
 async def run_compare_with_agent(
     first_reference: str,
     second_reference: str,
-    model: str = "gpt-5-nano",
+    model: str = "gpt-5.5",
 ) -> Dict[str, Any]:
     agent = build_compare_agent(model=model)
     prompt = (
@@ -249,7 +249,7 @@ async def run_compare_with_agent(
     return result.final_output.model_dump()
 
 
-def build_compare_insight_agent(model: str = "gpt-5-nano") -> Agent:
+def build_compare_insight_agent(model: str = "gpt-5.5") -> Agent:
     instruction = """
 You are a concise movie critic assistant.
 
@@ -285,7 +285,7 @@ Style:
 async def run_compare_insight_with_agent(
     first_reference: str,
     second_reference: str,
-    model: str = "gpt-5-nano",
+    model: str = "gpt-5.5",
 ) -> Dict[str, Any]:
     movies = load_movie_universe()
     base = compare_two_movies(first_reference, second_reference, movies)

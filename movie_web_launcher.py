@@ -2898,10 +2898,9 @@ async def _run_ai_text_insight(prompt: str) -> Dict[str, Any]:
         instructions=(
             "You are a concise movie assistant. "
             "Use only the provided structured data. "
-            "Return plain text in 3-6 short sentences."
         ),
         tools=[],
-        model="gpt-5-nano",
+        model="gpt-5.5",
     )
 
     result = await Runner.run(agent, input=prompt)
@@ -3034,7 +3033,7 @@ def compare_insight_api() -> Any:
             run_compare_insight_with_agent(
                 first_reference=first_reference,
                 second_reference=second_reference,
-                model="gpt-5-nano",
+                model="gpt-5.5",
             )
         )
         if ai_insight.get("error"):
@@ -3178,9 +3177,13 @@ def basic_description_insight_api() -> Any:
         return jsonify(base), 404
 
     prompt = (
-        "Provide a concise AI insight for this movie profile. "
-        "Include: who might enjoy it, viewing mood, and one watch-tip.\n\n"
-        f"Movie profile: {base}"
+      "Write an essay for a general audience using the movie profile below. "
+      "Use 3 paragraphs, each with a different focus, and make the full essay flow naturally:\n"
+      "Paragraph 1: Basic summary of what the movie/show is about.\n"
+      "Paragraph 2: What kind of people are likely to enjoy it and why.\n"
+      "Paragraph 3: IMDb information and what it implies, including IMDb ID, rating, popularity/votes, year, and genre.\n"
+      "Keep the writing clear, practical, and cohesive across all paragraphs.\n\n"
+      f"Movie profile: {base}"
     )
 
     try:

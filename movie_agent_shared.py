@@ -149,7 +149,7 @@ class SharedLookupOutput(BaseModel):
     year: Optional[int] = None
 
 
-def build_shared_agent(model: str = "gpt-5-nano") -> Agent:
+def build_shared_agent(model: str = "gpt-5.5") -> Agent:
     instruction = """
 You are a deterministic movie reference lookup agent.
 
@@ -174,7 +174,7 @@ Output rules:
     )
 
 
-async def run_shared_lookup_with_agent(reference: str, model: str = "gpt-5-nano") -> Dict[str, Any]:
+async def run_shared_lookup_with_agent(reference: str, model: str = "gpt-5.5") -> Dict[str, Any]:
     agent = build_shared_agent(model=model)
     result = await Runner.run(agent, input=f"Resolve this movie reference: {reference}")
     return result.final_output.model_dump()
