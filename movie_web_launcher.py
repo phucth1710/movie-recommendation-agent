@@ -387,6 +387,8 @@ PAGE_SHELL = """
       .nav-brand { width: 100%; }
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 </head>
 <body>
   <nav class="top-nav">
@@ -462,6 +464,40 @@ PAGE_SHELL = """
       // Optional integration point: dispatch this event from logout flow to clear session state.
       window.addEventListener('movie-user-logout', clearSessionState);
     })();
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    window.renderMarkdown = function (text) {
+      const source = text == null ? '' : String(text);
+      if (!source) return '';
+      try {
+        if (window.marked && window.DOMPurify) {
+          if (typeof window.marked.setOptions === 'function') {
+            window.marked.setOptions({ gfm: true, breaks: true });
+          }
+          const parser = window.marked.parse || window.marked;
+          const html = parser(source);
+          return window.DOMPurify.sanitize(html);
+        }
+      } catch (err) {
+      }
+      // CDN unavailable — minimal inline fallback so **bold** still renders.
+      const escaped = escapeHtml(source);
+      const blocks = escaped.split(/\\n{2,}/).map(function (block) {
+        const inline = block
+          .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\\n/g, '<br>');
+        return '<p>' + inline + '</p>';
+      });
+      return blocks.join('');
+    };
   </script>
   {{ script | safe }}
 </body>
@@ -2379,7 +2415,7 @@ BASIC_CONTENT = """
         <span class="spinner" aria-hidden="true"></span>
         <span>Generating AI insight...</span>
       </div>
-      <p id="basicAiText" style="margin:0; color:#334155; line-height:1.5;"></p>
+      <div id="basicAiText" style="margin:0; color:#334155; line-height:1.5;"></div>
     </div>
   </div>
 </section>
@@ -2408,9 +2444,15 @@ BASIC_SCRIPT = """
     window.movieStateStore.save(BASIC_STATE_KEY, {
       reference: basicRef.value || '',
       data: lastBasicData,
-      aiText: basicAiText.textContent || '',
+      aiText: basicAiText.dataset.raw || '',
       aiVisible: basicAiText.style.display !== 'none' && basicAiLoading.style.display !== 'flex',
     });
+  }
+
+  function setBasicAiBody(text) {
+    const raw = text == null ? '' : String(text);
+    basicAiText.dataset.raw = raw;
+    basicAiText.innerHTML = raw ? window.renderMarkdown(raw) : '';
   }
 
   function setBasicAiButtonLabel(isHideAction) {
@@ -2443,7 +2485,7 @@ BASIC_SCRIPT = """
       renderBasicResult(state.data);
       showBasicAiPrompt();
       if (state.aiText) {
-        basicAiText.textContent = state.aiText;
+        setBasicAiBody(state.aiText);
       }
       if (state.aiVisible && state.aiText) {
         basicAiBlock.style.display = 'block';
@@ -2465,7 +2507,7 @@ BASIC_SCRIPT = """
     basicAiBlock.style.display = 'none';
     basicAiLoading.style.display = 'none';
     basicAiBtn.disabled = false;
-    basicAiText.textContent = '';
+    setBasicAiBody('');
     basicAiText.style.display = 'none';
     setBasicAiButtonLabel(false);
   }
@@ -2480,7 +2522,7 @@ BASIC_SCRIPT = """
   }
 
   function hasBasicAiCache() {
-    return Boolean(basicAiText.textContent);
+    return Boolean(basicAiText.dataset.raw);
   }
 
   function renderBasicAi(text) {
@@ -2491,7 +2533,7 @@ BASIC_SCRIPT = """
     basicAiBlock.style.display = 'block';
     basicAiLoading.style.display = 'none';
     basicAiBtn.disabled = false;
-    basicAiText.textContent = text;
+    setBasicAiBody(text);
     basicAiText.style.display = 'block';
     setBasicAiButtonLabel(true);
     saveBasicState();
@@ -2501,7 +2543,7 @@ BASIC_SCRIPT = """
     basicAiBlock.style.display = 'block';
     basicAiLoading.style.display = 'none';
     basicAiBtn.disabled = false;
-    basicAiText.textContent = '';
+    setBasicAiBody('');
     basicAiText.style.display = 'none';
     setBasicAiButtonLabel(false);
   }
@@ -2519,7 +2561,7 @@ BASIC_SCRIPT = """
         basicAiBtn.disabled = false;
         basicAiText.style.display = 'block';
         setBasicAiButtonLabel(false);
-        basicAiText.textContent = 'AI insight is currently unavailable.';
+        setBasicAiBody('AI insight is currently unavailable.');
         saveBasicState();
         return;
       }
@@ -2529,7 +2571,7 @@ BASIC_SCRIPT = """
       basicAiBtn.disabled = false;
       basicAiText.style.display = 'block';
       setBasicAiButtonLabel(false);
-      basicAiText.textContent = 'AI insight is currently unavailable.';
+      setBasicAiBody('AI insight is currently unavailable.');
       saveBasicState();
     }
   }
@@ -2606,11 +2648,23 @@ BASIC_SCRIPT = """
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reference })
       });
-      const data = await res.json();
+
+      const rawBody = await res.text();
+      let data = {};
+      if (rawBody) {
+        try {
+          data = JSON.parse(rawBody);
+        } catch (parseErr) {
+          basicResult.style.display = 'none';
+          console.error('basic-description: server returned non-JSON', { status: res.status, body: rawBody });
+          showBasicError('Server returned status ' + res.status + ' with a non-JSON response. Check the server console for the underlying exception.');
+          return;
+        }
+      }
 
       if (!res.ok || data.error) {
         basicResult.style.display = 'none';
-        showBasicError(data.error || 'Could not resolve this reference.');
+        showBasicError(data.error || ('Could not resolve this reference (status ' + res.status + ').'));
         return;
       }
 
@@ -2621,7 +2675,9 @@ BASIC_SCRIPT = """
     } catch (err) {
       basicResult.style.display = 'none';
       resetBasicAi();
-      showBasicError('Network error while loading description.');
+      console.error('basic-description: fetch failed', err);
+      const detail = err && err.message ? err.message : 'unknown error';
+      showBasicError('Network error while loading description: ' + detail + '. Is the launcher server still running?');
     } finally {
       setBasicLoading(false);
     }
