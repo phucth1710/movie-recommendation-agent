@@ -735,7 +735,16 @@ SIMILAR_SCRIPT = """
 
       if (isExpanded && hasInsight) {
         const detailTr = document.createElement('tr');
-        detailTr.innerHTML = `<td colspan="11" style="background:#f8fbff; color:#334155; line-height:1.45;"><strong>More Detail:</strong> ${similarAiCache[imdbId]}</td>`;
+        const detailCell = document.createElement('td');
+        detailCell.colSpan = 11;
+        detailCell.style.cssText = 'background:#f8fbff; color:#334155; line-height:1.45;';
+        const label = document.createElement('strong');
+        label.textContent = 'More Detail:';
+        detailCell.appendChild(label);
+        const body = document.createElement('div');
+        body.innerHTML = window.renderMarkdown(similarAiCache[imdbId] || '');
+        detailCell.appendChild(body);
+        detailTr.appendChild(detailCell);
         rows.appendChild(detailTr);
       }
     });
@@ -1395,7 +1404,7 @@ RANK_SET_CONTENT = """
         <span class="spinner" aria-hidden="true"></span>
         <span>Generating AI insight...</span>
       </div>
-      <p id="rankSetAiText" style="margin:0; color:#334155; line-height:1.5;"></p>
+      <div id="rankSetAiText" style="margin:0; color:#334155; line-height:1.5;"></div>
     </div>
   </div>
 </section>
@@ -1442,9 +1451,15 @@ RANK_SET_SCRIPT = """
       defaultRowsData: rankSetDefaultRowsData,
       currentRowsData: rankSetCurrentRowsData,
       activeSort: rankSetActiveSort,
-      aiText: rankSetAiText.textContent || '',
+      aiText: rankSetAiText.dataset.raw || '',
       aiVisible: rankSetAiText.style.display !== 'none' && rankSetAiLoading.style.display !== 'flex',
     });
+  }
+
+  function setRankSetAiBody(text) {
+    const raw = text == null ? '' : String(text);
+    rankSetAiText.dataset.raw = raw;
+    rankSetAiText.innerHTML = raw ? window.renderMarkdown(raw) : '';
   }
 
   function setRankSetAiButtonLabel(isHideAction) {
@@ -1591,7 +1606,7 @@ RANK_SET_SCRIPT = """
       renderRankSetResult(state.data, true);
       showRankSetAiPrompt();
       if (state.aiText) {
-        rankSetAiText.textContent = state.aiText;
+        setRankSetAiBody(state.aiText);
       }
       if (state.aiVisible && state.aiText) {
         rankSetAiBlock.style.display = 'block';
@@ -1613,7 +1628,7 @@ RANK_SET_SCRIPT = """
     rankSetAiBlock.style.display = 'none';
     rankSetAiLoading.style.display = 'none';
     rankSetAiBtn.disabled = false;
-    rankSetAiText.textContent = '';
+    setRankSetAiBody('');
     rankSetAiText.style.display = 'none';
     setRankSetAiButtonLabel(false);
   }
@@ -1628,7 +1643,7 @@ RANK_SET_SCRIPT = """
   }
 
   function hasRankSetAiCache() {
-    return Boolean(rankSetAiText.textContent);
+    return Boolean(rankSetAiText.dataset.raw);
   }
 
   function renderRankSetAi(text) {
@@ -1639,7 +1654,7 @@ RANK_SET_SCRIPT = """
     rankSetAiBlock.style.display = 'block';
     rankSetAiLoading.style.display = 'none';
     rankSetAiBtn.disabled = false;
-    rankSetAiText.textContent = text;
+    setRankSetAiBody(text);
     rankSetAiText.style.display = 'block';
     setRankSetAiButtonLabel(true);
     saveRankSetState();
@@ -1649,7 +1664,7 @@ RANK_SET_SCRIPT = """
     rankSetAiBlock.style.display = 'block';
     rankSetAiLoading.style.display = 'none';
     rankSetAiBtn.disabled = false;
-    rankSetAiText.textContent = '';
+    setRankSetAiBody('');
     rankSetAiText.style.display = 'none';
     setRankSetAiButtonLabel(false);
   }
@@ -1667,7 +1682,7 @@ RANK_SET_SCRIPT = """
         rankSetAiBtn.disabled = false;
         rankSetAiText.style.display = 'block';
         setRankSetAiButtonLabel(false);
-        rankSetAiText.textContent = 'AI insight is currently unavailable.';
+        setRankSetAiBody('AI insight is currently unavailable.');
         saveRankSetState();
         return;
       }
@@ -1677,7 +1692,7 @@ RANK_SET_SCRIPT = """
       rankSetAiBtn.disabled = false;
       rankSetAiText.style.display = 'block';
       setRankSetAiButtonLabel(false);
-      rankSetAiText.textContent = 'AI insight is currently unavailable.';
+      setRankSetAiBody('AI insight is currently unavailable.');
       saveRankSetState();
     }
   }
@@ -1880,7 +1895,7 @@ RANK_TOP_CONTENT = """
         <span class="spinner" aria-hidden="true"></span>
         <span>Generating AI insight...</span>
       </div>
-      <p id="rankTopAiText" style="margin:0; color:#334155; line-height:1.5;"></p>
+      <div id="rankTopAiText" style="margin:0; color:#334155; line-height:1.5;"></div>
     </div>
   </div>
 </section>
@@ -1934,9 +1949,15 @@ RANK_TOP_SCRIPT = """
       defaultRowsData: rankTopDefaultRowsData,
       currentRowsData: rankTopCurrentRowsData,
       activeSort: rankTopActiveSort,
-      aiText: rankTopAiText.textContent || '',
+      aiText: rankTopAiText.dataset.raw || '',
       aiVisible: rankTopAiText.style.display !== 'none' && rankTopAiLoading.style.display !== 'flex',
     });
+  }
+
+  function setRankTopAiBody(text) {
+    const raw = text == null ? '' : String(text);
+    rankTopAiText.dataset.raw = raw;
+    rankTopAiText.innerHTML = raw ? window.renderMarkdown(raw) : '';
   }
 
   function setRankTopAiButtonLabel(isHideAction) {
@@ -2092,7 +2113,7 @@ RANK_TOP_SCRIPT = """
       renderRankTopResult(state.data, true);
       showRankTopAiPrompt();
       if (state.aiText) {
-        rankTopAiText.textContent = state.aiText;
+        setRankTopAiBody(state.aiText);
       }
       if (state.aiVisible && state.aiText) {
         rankTopAiBlock.style.display = 'block';
@@ -2114,7 +2135,7 @@ RANK_TOP_SCRIPT = """
     rankTopAiBlock.style.display = 'none';
     rankTopAiLoading.style.display = 'none';
     rankTopAiBtn.disabled = false;
-    rankTopAiText.textContent = '';
+    setRankTopAiBody('');
     rankTopAiText.style.display = 'none';
     setRankTopAiButtonLabel(false);
   }
@@ -2129,7 +2150,7 @@ RANK_TOP_SCRIPT = """
   }
 
   function hasRankTopAiCache() {
-    return Boolean(rankTopAiText.textContent);
+    return Boolean(rankTopAiText.dataset.raw);
   }
 
   function renderRankTopAi(text) {
@@ -2140,7 +2161,7 @@ RANK_TOP_SCRIPT = """
     rankTopAiBlock.style.display = 'block';
     rankTopAiLoading.style.display = 'none';
     rankTopAiBtn.disabled = false;
-    rankTopAiText.textContent = text;
+    setRankTopAiBody(text);
     rankTopAiText.style.display = 'block';
     setRankTopAiButtonLabel(true);
     saveRankTopState();
@@ -2150,7 +2171,7 @@ RANK_TOP_SCRIPT = """
     rankTopAiBlock.style.display = 'block';
     rankTopAiLoading.style.display = 'none';
     rankTopAiBtn.disabled = false;
-    rankTopAiText.textContent = '';
+    setRankTopAiBody('');
     rankTopAiText.style.display = 'none';
     setRankTopAiButtonLabel(false);
   }
@@ -2168,7 +2189,7 @@ RANK_TOP_SCRIPT = """
         rankTopAiBtn.disabled = false;
         rankTopAiText.style.display = 'block';
         setRankTopAiButtonLabel(false);
-        rankTopAiText.textContent = 'AI insight is currently unavailable.';
+        setRankTopAiBody('AI insight is currently unavailable.');
         saveRankTopState();
         return;
       }
@@ -2178,7 +2199,7 @@ RANK_TOP_SCRIPT = """
       rankTopAiBtn.disabled = false;
       rankTopAiText.style.display = 'block';
       setRankTopAiButtonLabel(false);
-      rankTopAiText.textContent = 'AI insight is currently unavailable.';
+      setRankTopAiBody('AI insight is currently unavailable.');
       saveRankTopState();
     }
   }
