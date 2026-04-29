@@ -2388,7 +2388,7 @@ BASIC_CONTENT = """
 
 BASIC_SCRIPT = """
 <script>
-  const BASIC_STATE_KEY = 'basic.v1';
+  const BASIC_STATE_KEY = 'basic.v2';
   const basicRef = document.getElementById('basicRef');
   const basicBtn = document.getElementById('basicBtn');
   const basicLoading = document.getElementById('basicLoading');
@@ -3178,10 +3178,23 @@ def basic_description_insight_api() -> Any:
 
     prompt = (
       "Write an essay for a general audience using the movie profile below. "
-      "Use 3 paragraphs, each with a different focus, and make the full essay flow naturally:\n"
-      "Paragraph 1: Basic summary of what the movie/show is about.\n"
-      "Paragraph 2: What kind of people are likely to enjoy it and why.\n"
-      "Paragraph 3: IMDb information and what it implies, including IMDb ID, rating, popularity/votes, year, and genre.\n"
+      "Use 3 paragraphs, each with a distinct focus, and make the full essay flow naturally from one to the next:\n\n"
+      "Paragraph 1 — Plot summary: Give an actual short content summary of what the movie/show is really about "
+      "(the premise, the central conflict, who the story follows, and what is at stake). Do NOT just restate the "
+      "title, year, and genres in a vague descriptive way — the reader should walk away knowing what actually "
+      "happens in the story. If the profile does not contain plot details, draw on widely known public knowledge "
+      "of the title to describe its premise accurately.\n\n"
+      "Paragraph 2 — Audience fit: Describe what kind of viewers are likely to enjoy it and why, grounded in the "
+      "tone, themes, and style implied by the premise and genres.\n\n"
+      "Paragraph 3 — IMDb breakdown and cultural impact: Open with a detailed, integrated breakdown of the IMDb "
+      "data and its implications — IMDb ID, rating, vote count/popularity, release year, and genre — written in "
+      "the style of this example:\n"
+      "  'On IMDb, Attack on Titan (tt2560140) holds a 9.1 rating from over 696,000 votes, signaling both elite "
+      "quality and massive global reach. As a 2013 Action-Adventure series, its profile reflects a definitive "
+      "masterpiece in the animation genre.'\n"
+      "Then transition smoothly from those facts into an analysis of public perception and the title's cultural "
+      "impact — what the rating and vote volume say about how audiences received it, and the mark it has left on "
+      "its genre or on viewers more broadly.\n\n"
       "Keep the writing clear, practical, and cohesive across all paragraphs.\n\n"
       f"Movie profile: {base}"
     )
