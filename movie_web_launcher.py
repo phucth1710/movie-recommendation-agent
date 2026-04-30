@@ -982,10 +982,26 @@ COMPARE_CONTENT = """
         <span>Generating AI insight...</span>
       </div>
       <div id="compareAiContent" style="display:none;">
-        <p id="aiGenreTone" style="margin:0 0 8px; color:#334155;"></p>
-        <p id="aiThemes" style="margin:0 0 8px; color:#334155;"></p>
-        <p id="aiReception" style="margin:0 0 8px; color:#334155;"></p>
-        <p id="aiTaste" style="margin:0; color:#0f2855; font-weight:600;"></p>
+        <div class="ai-compare-section" style="margin:0 0 14px; color:#334155;">
+          <div class="ai-compare-label" style="font-weight:700; color:#0f2855; margin:0 0 4px;">Overall Impression</div>
+          <div id="aiOverall" class="ai-compare-body markdown-body"></div>
+        </div>
+        <div class="ai-compare-section" style="margin:0 0 14px; color:#334155;">
+          <div class="ai-compare-label" style="font-weight:700; color:#0f2855; margin:0 0 4px;">Genre and Tone</div>
+          <div id="aiGenreTone" class="ai-compare-body markdown-body"></div>
+        </div>
+        <div class="ai-compare-section" style="margin:0 0 14px; color:#334155;">
+          <div class="ai-compare-label" style="font-weight:700; color:#0f2855; margin:0 0 4px;">Main Themes</div>
+          <div id="aiThemes" class="ai-compare-body markdown-body"></div>
+        </div>
+        <div class="ai-compare-section" style="margin:0 0 14px; color:#334155;">
+          <div class="ai-compare-label" style="font-weight:700; color:#0f2855; margin:0 0 4px;">Critical Reception</div>
+          <div id="aiReception" class="ai-compare-body markdown-body"></div>
+        </div>
+        <div class="ai-compare-section" style="margin:0; color:#0f2855;">
+          <div class="ai-compare-label" style="font-weight:700; color:#0f2855; margin:0 0 4px;">Taste Recommendation</div>
+          <div id="aiTaste" class="ai-compare-body markdown-body"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -1009,10 +1025,24 @@ COMPARE_SCRIPT = """
   const firstSuggestions = document.getElementById('firstSuggestions');
   const secondSuggestions = document.getElementById('secondSuggestions');
   const compareAiBlock = document.getElementById('compareAiBlock');
+  const aiOverall = document.getElementById('aiOverall');
   const aiGenreTone = document.getElementById('aiGenreTone');
   const aiThemes = document.getElementById('aiThemes');
   const aiReception = document.getElementById('aiReception');
   const aiTaste = document.getElementById('aiTaste');
+
+  function setAiCompareBody(el, text) {
+    const raw = text == null ? '' : String(text);
+    el.dataset.raw = raw;
+    el.innerHTML = raw ? window.renderMarkdown(raw) : '';
+  }
+  function clearAiCompareBodies() {
+    [aiOverall, aiGenreTone, aiThemes, aiReception, aiTaste].forEach(function (el) {
+      if (!el) return;
+      el.dataset.raw = '';
+      el.innerHTML = '';
+    });
+  }
   const aiInsightLoading = document.getElementById('aiInsightLoading');
   const compareAiBtn = document.getElementById('compareAiBtn');
   const compareAiContent = document.getElementById('compareAiContent');
@@ -1027,10 +1057,7 @@ COMPARE_SCRIPT = """
     compareAiContent.style.display = 'none';
     setCompareAiButtonLabel(false);
     compareAiBtn.disabled = true;
-    aiGenreTone.textContent = '';
-    aiThemes.textContent = '';
-    aiReception.textContent = '';
-    aiTaste.textContent = '';
+    clearAiCompareBodies();
     compareAiBlock.style.display = 'block';
   }
 
@@ -1040,10 +1067,7 @@ COMPARE_SCRIPT = """
     setCompareAiButtonLabel(false);
     compareAiBtn.disabled = false;
     aiInsightLoading.style.display = 'none';
-    aiGenreTone.textContent = '';
-    aiThemes.textContent = '';
-    aiReception.textContent = '';
-    aiTaste.textContent = '';
+    clearAiCompareBodies();
   }
 
   function hideAiInsightContent() {
@@ -1054,7 +1078,13 @@ COMPARE_SCRIPT = """
   }
 
   function hasCompareAiCache() {
-    return Boolean(aiGenreTone.textContent || aiThemes.textContent || aiReception.textContent || aiTaste.textContent);
+    return Boolean(
+      (aiOverall && aiOverall.dataset.raw) ||
+      (aiGenreTone && aiGenreTone.dataset.raw) ||
+      (aiThemes && aiThemes.dataset.raw) ||
+      (aiReception && aiReception.dataset.raw) ||
+      (aiTaste && aiTaste.dataset.raw)
+    );
   }
 
   function renderAiInsight(aiInsight) {
@@ -1066,10 +1096,11 @@ COMPARE_SCRIPT = """
     compareAiContent.style.display = 'block';
     setCompareAiButtonLabel(true);
     compareAiBtn.disabled = false;
-    aiGenreTone.textContent = `Genre and Tone: ${aiInsight.genre_and_tone || ''}`;
-    aiThemes.textContent = `Main Themes: ${aiInsight.main_themes || ''}`;
-    aiReception.textContent = `Critical Reception: ${aiInsight.critical_reception || ''}`;
-    aiTaste.textContent = `Taste Recommendation: ${aiInsight.taste_recommendation || ''}`;
+    setAiCompareBody(aiOverall, aiInsight.overall_impression || '');
+    setAiCompareBody(aiGenreTone, aiInsight.genre_and_tone || '');
+    setAiCompareBody(aiThemes, aiInsight.main_themes || '');
+    setAiCompareBody(aiReception, aiInsight.critical_reception || '');
+    setAiCompareBody(aiTaste, aiInsight.taste_recommendation || '');
     compareAiBlock.style.display = 'block';
     saveCompareState();
   }
@@ -1080,10 +1111,11 @@ COMPARE_SCRIPT = """
       secondRef: secondRef.value || '',
       data: lastCompareData,
       ai: {
-        genreTone: aiGenreTone.textContent || '',
-        themes: aiThemes.textContent || '',
-        reception: aiReception.textContent || '',
-        taste: aiTaste.textContent || '',
+        overall: (aiOverall && aiOverall.dataset.raw) || '',
+        genreTone: (aiGenreTone && aiGenreTone.dataset.raw) || '',
+        themes: (aiThemes && aiThemes.dataset.raw) || '',
+        reception: (aiReception && aiReception.dataset.raw) || '',
+        taste: (aiTaste && aiTaste.dataset.raw) || '',
         visible: compareAiContent.style.display === 'block' && aiInsightLoading.style.display !== 'flex',
       },
     });
@@ -1099,10 +1131,11 @@ COMPARE_SCRIPT = """
       lastCompareData = state.data;
       showAiInsightPrompt();
       if (state.ai) {
-        aiGenreTone.textContent = state.ai.genreTone || '';
-        aiThemes.textContent = state.ai.themes || '';
-        aiReception.textContent = state.ai.reception || '';
-        aiTaste.textContent = state.ai.taste || '';
+        setAiCompareBody(aiOverall, state.ai.overall || '');
+        setAiCompareBody(aiGenreTone, state.ai.genreTone || '');
+        setAiCompareBody(aiThemes, state.ai.themes || '');
+        setAiCompareBody(aiReception, state.ai.reception || '');
+        setAiCompareBody(aiTaste, state.ai.taste || '');
         if (state.ai.visible && hasCompareAiCache()) {
           aiInsightLoading.style.display = 'none';
           compareAiBlock.style.display = 'block';
@@ -1184,7 +1217,8 @@ COMPARE_SCRIPT = """
         compareAiBtn.disabled = false;
         compareAiContent.style.display = 'block';
         setCompareAiButtonLabel(false);
-        aiGenreTone.textContent = 'AI insight is currently unavailable.';
+        clearAiCompareBodies();
+        setAiCompareBody(aiOverall, 'AI insight is currently unavailable.');
         return;
       }
       renderAiInsight(data.ai_insight || null);
@@ -1193,7 +1227,8 @@ COMPARE_SCRIPT = """
       compareAiBtn.disabled = false;
       compareAiContent.style.display = 'block';
       setCompareAiButtonLabel(false);
-      aiGenreTone.textContent = 'AI insight is currently unavailable.';
+      clearAiCompareBodies();
+      setAiCompareBody(aiOverall, 'AI insight is currently unavailable.');
     }
   }
 
@@ -1203,10 +1238,7 @@ COMPARE_SCRIPT = """
     setCompareAiButtonLabel(false);
     compareAiBtn.disabled = false;
     aiInsightLoading.style.display = 'none';
-    aiGenreTone.textContent = '';
-    aiThemes.textContent = '';
-    aiReception.textContent = '';
-    aiTaste.textContent = '';
+    clearAiCompareBodies();
   }
 
   function hideMovieSuggestions(dropdown) {

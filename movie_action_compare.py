@@ -203,6 +203,7 @@ class ComparisonOutput(BaseModel):
 
 class AIComparisonInsight(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    overall_impression: str
     genre_and_tone: str
     main_themes: str
     critical_reception: str
@@ -251,21 +252,88 @@ async def run_compare_with_agent(
 
 def build_compare_insight_agent(model: str = "gpt-5.5") -> Agent:
     instruction = """
-You are a concise movie critic assistant.
+You are an experienced film and television critic writing a comparison essay
+for a general audience that already knows both titles.
 
-You will receive trusted structured comparison data for two titles.
-Write grounded analysis only from that input.
+You will receive structured metadata (title, year, genres, IMDb rating,
+popularity, etc.) for two real, well-known works. Treat the metadata as
+IDENTIFIERS for looking each title up in your own knowledge — NOT as the
+substance of your analysis. You SHOULD use widely known public knowledge of
+each title (characters, premise, story arc, tone, cultural footprint,
+awards/sales/legacy, audience response) to write a rich, content-driven
+comparison. NEVER write phrases like "the data only says…", "based on the
+genre data…", "the provided dataset indicates…", "limited information
+available", or any similar hedging about the metadata. Do not refer to
+"the data", "the profile", "the dataset", or "the metadata" anywhere.
 
-Output fields:
+Output fields (return all five, in this order):
+- overall_impression
 - genre_and_tone
 - main_themes
 - critical_reception
 - taste_recommendation
 
+FORMAT — every field MUST be valid Markdown.
+- Use **bold** for emphasis on titles, themes, and key claims.
+- Use bullet lists ("- ") where it genuinely helps clarity (especially in
+  main_themes), but prose paragraphs are also fine.
+- Do NOT include the field name itself as a heading inside the field's value
+  (the UI prepends the section title for you).
+- Do NOT use H1/H2 hash headings ("#", "##"); use bold inline emphasis only.
+
+Field-specific requirements:
+
+overall_impression — 3 to 6 sentences of flowing prose that opens the essay.
+Establish the cultural relationship between the two titles before any
+section-by-section breakdown: how people typically discuss them together,
+what they obviously share, and what makes the pairing interesting or
+unexpected. Name both titles explicitly. End with a hook that leads naturally
+into the deeper analysis below. Do NOT split into bullet points here.
+
+genre_and_tone — A meaty paragraph (4-6 sentences) of CONTENT-DRIVEN
+analysis. Go beyond the genre labels: discuss how each work actually feels
+on screen, the texture of its action, the moral atmosphere, the use of
+violence, pacing, scope (intimate vs operatic), and how each title handles
+escalation. Compare and contrast specific tonal traits — for example,
+political cynicism, body horror, mythic scale, courtly intrigue,
+existential dread — that are concretely true of each work.
+
+main_themes — Use Markdown structure here. Write a 1-2 sentence lead-in,
+then provide a clearly formatted breakdown of the actual thematic concerns
+of EACH title (e.g., power and legitimacy, freedom vs determinism, cycles
+of revenge, the cost of war, family, identity). A good shape is:
+  **Shared themes**
+  - bullet points of themes both works genuinely explore
+  **<First title>**
+  - bullet points specific to the first title
+  **<Second title>**
+  - bullet points specific to the second title
+Each bullet should be a concrete theme tied to specific story elements,
+not a generic genre cliché.
+
+critical_reception — Do NOT rely on IMDb numbers alone. Treat IMDb rating
+and vote count as ONE signal among several. You MUST also discuss, drawing
+on widely known public knowledge: box-office or streaming/viewership
+performance where relevant, awards (Emmy, Oscar, Crunchyroll/anime awards,
+Hugo, etc., as appropriate), critical consensus from major outlets,
+fandom size and longevity, merchandising/franchise footprint, and lasting
+cultural legacy or influence on the medium. Compare the two works on these
+dimensions, not just on the rating gap. 5-8 sentences.
+
+taste_recommendation — This is the conclusion of the essay. Synthesize
+everything above (overall impression + tone + themes + reception) into a
+practical recommendation. Use this shape:
+  **Choose <First title> if…** followed by 2-4 sentences explaining the
+  kind of viewer, mood, or appetite it best satisfies, referencing the
+  specific tonal/thematic traits you identified earlier.
+  **Choose <Second title> if…** followed by 2-4 sentences doing the same.
+Optionally close with one short sentence on watching both. Do NOT just
+re-quote IMDb numbers; lean on the qualitative analysis.
+
 Style:
-- Keep each field to 1-3 sentences.
-- Be specific and practical.
-- If data is limited, acknowledge uncertainty briefly.
+- Confident, specific, and concrete. No filler, no hedging about data.
+- Refer to the works by their real names. Use widely known public knowledge.
+- Keep numeric facts (rating, vote count, year) accurate to the input.
 """
 
     api_key = os.getenv("OPENAI_API_KEY")
@@ -297,11 +365,33 @@ async def run_compare_insight_with_agent(
     comp = base.get("comparison", {})
 
     prompt = (
-        "Compare these two titles using the provided structured data only.\n\n"
-        f"First movie: {first_movie}\n"
-        f"Second movie: {second_movie}\n"
-        f"Comparison metrics: {comp}\n\n"
-        "Explain genre/tone, themes, critical reception, and who may prefer which title."
+        "Write a critic's comparison essay for the two titles below. The "
+        "metadata is provided ONLY to identify the works — treat them as real, "
+        "well-known titles and write content-driven analysis from your own "
+        "knowledge of them. Do NOT hedge about missing data, do NOT refer to "
+        "'the data' or 'the profile', and do NOT lean on the IMDb numbers as "
+        "your only evidence.\n\n"
+        "Return all five Markdown fields in this order:\n"
+        "  1. overall_impression — 3-6 sentences of opening prose that "
+        "frames the cultural relationship between the two titles.\n"
+        "  2. genre_and_tone — a meaty paragraph (4-6 sentences) of concrete "
+        "tonal analysis (atmosphere, pacing, scope, moral texture, how each "
+        "work actually feels), going well beyond the genre labels.\n"
+        "  3. main_themes — Markdown with **Shared themes**, **<First "
+        "title>**, and **<Second title>** subheadings, each followed by "
+        "bullet points of specific thematic concerns tied to real story "
+        "elements.\n"
+        "  4. critical_reception — 5-8 sentences. Use IMDb rating and votes "
+        "as ONE signal, then bring in box office / viewership, awards, "
+        "critical consensus, fandom and longevity, franchise footprint, and "
+        "cultural legacy. Compare the two works on these dimensions.\n"
+        "  5. taste_recommendation — the essay's conclusion. Use the shape "
+        "**Choose <First title> if…** (2-4 sentences) and **Choose <Second "
+        "title> if…** (2-4 sentences), grounded in the tonal/thematic "
+        "analysis above, not just the ratings.\n\n"
+        f"First title: {first_movie}\n"
+        f"Second title: {second_movie}\n"
+        f"Comparison metrics: {comp}\n"
     )
 
     agent = build_compare_insight_agent(model=model)
